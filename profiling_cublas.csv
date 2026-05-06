@@ -1,0 +1,2 @@
+timestamp_unix,token,pos,dim,hidden_dim,n_heads,n_kv_heads,rms_att_ms,qkv_ms,rope_kvcache_ms,flash_attn_ms,out_proj_res_ms,rms_ffn_ms,ffn_w1w3_ms,swiglu_w2_ms,total_layer_ms,est_32_layer_ms,est_tok_s
+1778041893,1559,10,4096,11008,32,32,0.009216,0.173056,0.027648,0.023552,0.247808,0.009216,0.280576,0.158720,0.929792,29.753345,33.609665

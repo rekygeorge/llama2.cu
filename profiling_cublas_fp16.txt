@@ -1,26 +1,26 @@
 ================================================================================
 CUDA LLAMA2 EXECUTION SUMMARY
 ================================================================================
-Timestamp: 2026-05-06 03:27:07 UTC
+Timestamp: 2026-05-06 05:13:44 UTC
 Model: llama2_7b.bin
 Prompt: Once upon a time
 Steps: 256
 Temperature: 1.0
 Top-p: 0.9
 Seed: 42
-Execution Time: 188.27 seconds
+Execution Time: 286.76 seconds
 ================================================================================
 
 EXECUTION LOG:
 
-🕐 Execution started: 2026-05-06 03:23:59 UTC
+🕐 Execution started: 2026-05-06 05:08:57 UTC
 🚀 Starting CUDA Llama2 compilation and execution with S3 support...
 📂 Working directory: /app
 🤖 Selected model: llama2_7b.bin
 🧩 CUDA implementation: cublas_fp16 (llama2_cublas_fp16.cu)
 📊 Model info: 7B parameter model (large, high quality)
 📏 Expected size: 26.0 GB
-📁 Directory contents: ['modal_app.py', '.env', 'profiling_cublas.txt', '.git', 'llama2_flash.cu', 'tokenizer.model', 'llama2_tiled.cu', 'stories15M.bin', 'vllm_inference.py', 'llama2_cublas_fp16.cu', 'profile_stats.py', 'docs', 'Makefile', '.gitignore', 'llama2_tiled_backup.cu', 'profiling_runs', 'Tests', 'win.c', 'llama2.c', '__pycache__', 'win.h', 'README.md', 'run_profiling_experiment.sh', 'tokenizer.bin', 'llama2_cublas_fp16.c', 'llama2_cublas.cu', 'profiling.txt']
+📁 Directory contents: ['.gitignore', '.git', 'profiling_cublas.txt', 'profiling.txt', 'profiling_runs', 'llama2_flash.cu', 'llama2_cublas.cu', '.env', 'llama2.c', 'profiling_cublas.csv', 'tokenizer.bin', 'profiling_cublas_fp16.txt', 'modal_app.py', 'llama2_cublas_fp16.c', 'llama2_cublas_fp16.cu', 'profiling_cublas_fp16.csv', 'profile_stats.py', 'llama2_tiled_backup.cu', 'README.md', 'vllm_inference.py', 'Tests', 'win.c', 'run_profiling_experiment.sh', '__pycache__', 'llama2_tiled.cu', 'stories15M.bin', 'Makefile', 'win.h', 'tokenizer.model']
 
 🔍 Verifying CUDA installation...
 ✅ CUDA Compiler: nvcc: NVIDIA (R) Cuda compiler driver
@@ -29,7 +29,7 @@ Built on Wed_Jan_15_19:20:09_PST_2025
 Cuda compilation tools, release 12.8, V12.8.61
 Build cuda_12.8.r12.8/compiler.35404655_0
 ✅ GPU Status:
-Wed May  6 03:23:59 2026       
+Wed May  6 05:08:57 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
 +-----------------------------------------+------------------------+----------------------+
@@ -37,8 +37,8 @@ Wed May  6 03:23:59 2026
 | Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
-|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:0F:00.0 Off |                    0 |
-| N/A   35C    P0             57W /  400W |       0MiB /  40960MiB |      0%      Default |
+|   0  NVIDIA A100 80GB PCIe          On  |   00000001:00:00.0 Off |                    0 |
+| N/A   36C    P0             52W /  300W |       0MiB /  81920MiB |      0%      Default |
 |                                         |                        |             Disabled |
 +-----------------------------------------+------------------------+----------------------+
 
@@ -51,10 +51,10 @@ Wed May  6 03:23:59 2026
 +-----------------------------------------------------------------------------------------+
 
 🎯 GPU Details:
-   Name: NVIDIA A100-SXM4-40GB
+   Name: NVIDIA A100 80GB PCIe
    Compute Capability: 8.0
    Driver Version: 580.95.05
-   Total Memory: 40960 MB
+   Total Memory: 81920 MB
 🔧 CUDA Toolkit: Cuda compilation tools, release 12.8, V12.8.61
 ✅ All required source files found
 
@@ -88,85 +88,100 @@ ptxas info    : Compiling entry function '_Z19fp32_to_fp16_kernelP6__halfPKfi' f
 ptxas info    : Function properties for _Z19fp32_to_fp16_kernelP6__halfPKfi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 8 registers, used 0 barriers, 372 bytes cmem[0]
-ptxas info    : Compile time = 2.606 ms
+ptxas info    : Compile time = 2.484 ms
 ptxas info    : Compiling entry function '_Z22flash_attention_kernelPKfS0_S0_Pfiiiif' for 'sm_80'
 ptxas info    : Function properties for _Z22flash_attention_kernelPKfS0_S0_Pfiiiif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 56 registers, used 1 barriers, 404 bytes cmem[0]
-ptxas info    : Compile time = 28.365 ms
+ptxas info    : Compile time = 27.231 ms
 ptxas info    : Compiling entry function '_Z10add_kernelPfPKfi' for 'sm_80'
 ptxas info    : Function properties for _Z10add_kernelPfPKfi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
-ptxas info    : Compile time = 1.163 ms
+ptxas info    : Compile time = 1.416 ms
 ptxas info    : Compiling entry function '_Z13swiglu_kernelPfPKfi' for 'sm_80'
 ptxas info    : Function properties for _Z13swiglu_kernelPfPKfi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 12 registers, used 0 barriers, 372 bytes cmem[0]
-ptxas info    : Compile time = 1.326 ms
+ptxas info    : Compile time = 1.921 ms
 ptxas info    : Compiling entry function '_Z11rope_kernelPfS_iiii' for 'sm_80'
 ptxas info    : Function properties for _Z11rope_kernelPfS_iiii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 16 registers, used 0 barriers, 384 bytes cmem[0]
-ptxas info    : Compile time = 4.827 ms
+ptxas info    : Compile time = 4.267 ms
 ptxas info    : Compiling entry function '_Z18embed_fp16_to_fp32PfPK6__halfii' for 'sm_80'
 ptxas info    : Function properties for _Z18embed_fp16_to_fp32PfPK6__halfii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 10 registers, used 0 barriers, 376 bytes cmem[0]
-ptxas info    : Compile time = 0.912 ms
+ptxas info    : Compile time = 0.828 ms
 ptxas info    : Compiling entry function '_Z19rmsnorm_fp16_kernelPfPKfPK6__halfif' for 'sm_80'
 ptxas info    : Function properties for _Z19rmsnorm_fp16_kernelPfPKfPK6__halfif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 13 registers, used 1 barriers, 16 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 3.988 ms
+ptxas info    : Compile time = 3.651 ms
 
 ✅ Executable created: /app/llama2_cublas_fp16
-📋 Executable info: /app/llama2_cublas_fp16: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=f77d34c2897b1145221b691ef5bd2201c317a5c1, for GNU/Linux 3.2.0, not stripped
+📋 Executable info: /app/llama2_cublas_fp16: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=63529759eb87ba7a473558bef8f7753c523d616c, for GNU/Linux 3.2.0, not stripped
 📚 Library dependencies:
-   linux-vdso.so.1 (0x00002ae3bc116000)
-   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002ae3bc200000)
-   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002ae3bc600000)
-   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002ae3bc4b4000)
-   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002ae3c3800000)
-   /lib64/ld-linux-x86-64.so.2 (0x0000564b5850c000)
-   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002ae3bc137000)
-   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002ae3bc13e000)
-   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002ae3bc143000)
-   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002ae3c3c00000)
-   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002ae3bc148000)
+   linux-vdso.so.1 (0x00002b00111c2000)
+   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002b0011200000)
+   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002b0011600000)
+   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002b00114b4000)
+   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002b0018800000)
+   /lib64/ld-linux-x86-64.so.2 (0x0000556e45110000)
+   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002b00111e4000)
+   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002b00111eb000)
+   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002b00111f0000)
+   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002b0018c00000)
+   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002b001159b000)
 
 🚀 Running CUDA Llama2 inference...
 🤖 Model: llama2_7b.bin
 📝 Prompt: 'Once upon a time'
 ⚙️  Steps: 256, Temperature: 1.0, Top-p: 0.9, Seed: 42
+📈 Profiling enabled: trigger_pos=10, csv=/cache/profiling_cublas_fp16.csv
 📏 Actual model size being executed: 27.0 GB
 ⚠️  Large model detected - monitoring for potential issues...
 💾 GPU memory should be sufficient for A100 (40GB+ available)
-🔧 Run command: ./llama2_cublas_fp16 llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 42
+ℹ️  cublas_fp16: passing -P and -R for bottleneck analysis and CSV output.
+🔧 Run command: ./llama2_cublas_fp16 llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 42 -P 10 -R /cache/profiling_cublas_fp16.csv
 
 🔬 Pre-execution environment check:
    CUDA_VISIBLE_DEVICES: Not set
    LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
    PATH: /usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin...
-   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-6c4c5d21-ec1c-a29a-d0db-9702fc03f985)
+   Available GPUs: GPU 0: NVIDIA A100 80GB PCIe (UUID: GPU-cd1684a0-7688-d15d-df7d-af1a6b5c68fc)
 
 🔄 Execution Strategy #1: Standard execution with 96KB shared memory
    Environment: {'CUDA_DEVICE_MAX_CONNECTIONS': '32'}
-   Command: ./llama2_cublas_fp16 llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 42
+   Command: ./llama2_cublas_fp16 llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 42 -P 10 -R /cache/profiling_cublas_fp16.csv
    Timeout: 300s
 
 ============================================================
 🤖 LLAMA2 CUDA OUTPUT (llama2_7b.bin) - Strategy 1:
 ============================================================
 [fp16] Uploading weights to GPU as FP16...
-STDERR: GPU: NVIDIA A100-SXM4-40GB (CC 8.0, 39.5 GB)
+STDERR: GPU: NVIDIA A100 80GB PCIe (CC 8.0, 79.3 GB)
 [fp16] Weights: ~500 MB FP32 -> ~12602 MB FP16 on GPU
-STDERR: Achieved tok/s: 67.25
-Once upon a time, this grand gemstone carved its way to the center of the earth, through the death of the Ancient One. It took hundreds of millions of years for a shimmering red fire to begin the molting of granite and the igniting of diamonds deep below the surface of the earth.
-As evolution was taking place, the tiny ruby-like seed began its transformation into a magnificent gemstone. The passing of millions of years had etched its path and history into its forever scarred and rough surface. Yet even now, with its blemished heart, its heart was still alive and beautiful and filled with the deepest of loves. And its rough edges softened the more time passed.
-The centuries went by and humans became enamored with this rare and spectacular stone. The king was enchanted by the beauty of the garnet, and wanted to have it with him always. He hid it inside his breastplate of armor. The love the king had for his ruby was never-ending and the gems never-fading love in return.
-But the story doesn’t end here.
-There is an ancient legend of a young man who was so taken with the stone’
+STDERR: Achieved tok/s: 76.62
+Once upon a time, this grand British landscape belonged
+=== FP16 MODEL BOTTLENECK ANALYSIS (Layer 0, pos=10) ===
+1. RMSNorm (attention):        0.014 ms
+2. QKV Projections:            0.112 ms
+3. RoPE + KV Cache:            0.018 ms
+4. Flash Attention:            0.028 ms
+5. Output Proj + Residual:     0.041 ms
+6. RMSNorm (FFN):              0.011 ms
+7. FFN W1+W3:                  0.130 ms
+8. SwiGLU + W2:                0.078 ms
+
+TOTAL LAYER TIME:        0.432 ms
+ESTIMATED 32-LAYER TIME: 13.8 ms = 72.3 tok/s
+Profiling metrics appended to /cache/profiling_cublas_fp16.csv
+ to a noble and generous widow. After her death the estate was split between her children. It has now come to be owned and loved by their descendants. The Hall was extensively altered by the successive owners. New wings were added, rooms were re-modelled, and the old Tudor manor was replaced with a new Georgian house.
+During the recent past, the 4th Earl of Normanton and his family saved the Hall from ruin, made substantial repairs and refurbishments, and returned the house to its original layout. They also set up a very successful dairy farm and one of the finest estates in the country. The entire estate has been passed down the generations, and in 2009 it came to be owned by Sir Michael and Lady Cook.
+The grounds are beautifully presented and the walled gardens offer a quiet and pleasant setting for wedding ceremonies. The staff at Normanton Hall are efficient and dedicated, and they take enormous pride in their work.
+Couples who chose Normanton Hall as their venue are also given the opportunity to enjoy a bespoke and individual
 ============================================================
 🔍 Process completed with return code: 0
 ✅ Strategy 1 succeeded!

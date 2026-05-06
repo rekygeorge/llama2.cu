@@ -61,6 +61,44 @@
 
 static cublasHandle_t cublas_handle;
 
+/* Profiling globals (triggered by -P <pos> flag) */
+static bool g_enable_profile    = false;
+static bool g_profile_triggered = false;
+static int  g_profile_pos       = 10;
+static char g_profile_csv_path[512] = "cublas_fp16_profile_metrics.csv";
+
+static void append_profile_metrics_csv(
+    int token, int pos, int dim, int hidden_dim, int n_heads, int n_kv_heads,
+    float stage1_ms, float stage2_ms, float stage3_ms, float stage4_ms,
+    float stage5_ms, float stage6_ms, float stage7_ms, float stage8_ms,
+    float total_layer_ms, float est_32_layer_ms, float est_tok_s
+) {
+    FILE* csv_file = fopen(g_profile_csv_path, "a");
+    if (!csv_file) {
+        fprintf(stderr, "Error: could not open %s for writing\n", g_profile_csv_path);
+        return;
+    }
+
+    fseek(csv_file, 0, SEEK_END);
+    long file_size = ftell(csv_file);
+
+    if (file_size == 0) {
+        fprintf(csv_file,
+                "timestamp_unix,token,pos,dim,hidden_dim,n_heads,n_kv_heads,"
+                "rms_att_ms,qkv_ms,rope_kvcache_ms,flash_attn_ms,out_proj_res_ms,"
+                "rms_ffn_ms,ffn_w1w3_ms,swiglu_w2_ms,total_layer_ms,est_32_layer_ms,est_tok_s\n");
+    }
+
+    fprintf(csv_file,
+            "%lld,%d,%d,%d,%d,%d,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+            (long long)time(NULL),
+            token, pos, dim, hidden_dim, n_heads, n_kv_heads,
+            stage1_ms, stage2_ms, stage3_ms, stage4_ms,
+            stage5_ms, stage6_ms, stage7_ms, stage8_ms,
+            total_layer_ms, est_32_layer_ms, est_tok_s);
+    fclose(csv_file);
+}
+
 // ----------------------------------------------------------------------------
 // Config / model structures
 
@@ -548,6 +586,172 @@ static void free_transformer(Transformer* t) {
 }
 
 // ----------------------------------------------------------------------------
+// Per-layer bottleneck profiler (analogous to profile_7b_bottlenecks in
+// llama2_cublas.cu, but adapted for FP16 weights / FP32 activations)
+
+static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
+    Config*         p = &t->config;
+    GPUWeightsFP16* w = &t->gpu_w;
+    RunState*       s = &t->state;
+    int dim        = p->dim;
+    int kv_dim     = dim * p->n_kv_heads / p->n_heads;
+    int hidden_dim = p->hidden_dim;
+    int head_size  = dim / p->n_heads;
+    float scale    = 1.0f / sqrtf((float)head_size);
+
+    cudaEvent_t ev_start, ev_stop;
+    cudaEventCreate(&ev_start);
+    cudaEventCreate(&ev_stop);
+    float elapsed_ms, total_ms = 0.0f;
+    float stage1_ms = 0.0f, stage2_ms = 0.0f, stage3_ms = 0.0f, stage4_ms = 0.0f;
+    float stage5_ms = 0.0f, stage6_ms = 0.0f, stage7_ms = 0.0f, stage8_ms = 0.0f;
+
+    printf("\n=== FP16 MODEL BOTTLENECK ANALYSIS (Layer 0, pos=%d) ===\n", pos);
+
+    /* Prime d_x with the token embedding for layer 0 */
+    {
+        int threads = 256;
+        int blocks  = (dim + threads - 1) / threads;
+        embed_fp16_to_fp32<<<blocks, threads>>>(
+            s->d_x, w->d_token_embedding_table, token * dim, dim);
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
+
+    int l = 0; /* profile layer 0 only */
+
+    /* --- Stage 1: Attention RMSNorm --- */
+    cudaEventRecord(ev_start);
+    cuda_rmsnorm_fp16(s->d_xb, s->d_x,
+                      w->d_rms_att_weight + (size_t)l * dim, dim);
+    cudaEventRecord(ev_stop);
+    cudaEventSynchronize(ev_stop);
+    cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
+    printf("1. RMSNorm (attention):        %.3f ms\n", elapsed_ms);
+    stage1_ms = elapsed_ms; total_ms += elapsed_ms;
+
+    /* --- Stage 2: QKV Projections (FP16 weights -> FP32 output) --- */
+    cudaEventRecord(ev_start);
+    cublas_sgemv_fp16(dim, dim,
+                      w->d_wq + (size_t)l * dim * dim,    s->d_xb, s->d_q);
+    cublas_sgemv_fp16(dim, kv_dim,
+                      w->d_wk + (size_t)l * dim * kv_dim, s->d_xb, s->d_k);
+    cublas_sgemv_fp16(dim, kv_dim,
+                      w->d_wv + (size_t)l * dim * kv_dim, s->d_xb, s->d_v);
+    cudaEventRecord(ev_stop);
+    cudaEventSynchronize(ev_stop);
+    cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
+    printf("2. QKV Projections:            %.3f ms\n", elapsed_ms);
+    stage2_ms = elapsed_ms; total_ms += elapsed_ms;
+
+    /* --- Stage 3: RoPE + KV Cache --- */
+    cudaEventRecord(ev_start);
+    {
+        int total   = p->n_heads * (head_size / 2);
+        int threads = 256;
+        int blocks  = (total + threads - 1) / threads;
+        rope_kernel<<<blocks, threads>>>(
+            s->d_q, s->d_k, p->n_heads, p->n_kv_heads, head_size, pos);
+    }
+    {
+        size_t loff = (size_t)l * p->seq_len * kv_dim;
+        CUDA_CHECK(cudaMemcpy(s->d_key_cache   + loff + (size_t)pos * kv_dim,
+                              s->d_k, kv_dim * sizeof(float),
+                              cudaMemcpyDeviceToDevice));
+        CUDA_CHECK(cudaMemcpy(s->d_value_cache + loff + (size_t)pos * kv_dim,
+                              s->d_v, kv_dim * sizeof(float),
+                              cudaMemcpyDeviceToDevice));
+    }
+    cudaEventRecord(ev_stop);
+    cudaEventSynchronize(ev_stop);
+    cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
+    printf("3. RoPE + KV Cache:            %.3f ms\n", elapsed_ms);
+    stage3_ms = elapsed_ms; total_ms += elapsed_ms;
+
+    /* --- Stage 4: Flash Attention --- */
+    cudaEventRecord(ev_start);
+    {
+        size_t loff = (size_t)l * p->seq_len * kv_dim;
+        size_t smem = (size_t)(pos + 1) * sizeof(float);
+        CUDA_CHECK(cudaMemset(s->d_xb, 0, dim * sizeof(float)));
+        flash_attention_kernel<<<p->n_heads, 256, smem>>>(
+            s->d_q,
+            s->d_key_cache   + loff,
+            s->d_value_cache + loff,
+            s->d_xb,
+            pos + 1, head_size,
+            p->n_heads, p->n_kv_heads, scale);
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
+    cudaEventRecord(ev_stop);
+    cudaEventSynchronize(ev_stop);
+    cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
+    printf("4. Flash Attention:            %.3f ms\n", elapsed_ms);
+    stage4_ms = elapsed_ms; total_ms += elapsed_ms;
+
+    /* --- Stage 5: Output Projection + Residual --- */
+    cudaEventRecord(ev_start);
+    cublas_sgemv_fp16(dim, dim,
+                      w->d_wo + (size_t)l * dim * dim, s->d_xb, s->d_xb2);
+    { int b = (dim + 255) / 256; add_kernel<<<b, 256>>>(s->d_x, s->d_xb2, dim); }
+    cudaEventRecord(ev_stop);
+    cudaEventSynchronize(ev_stop);
+    cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
+    printf("5. Output Proj + Residual:     %.3f ms\n", elapsed_ms);
+    stage5_ms = elapsed_ms; total_ms += elapsed_ms;
+
+    /* --- Stage 6: FFN RMSNorm --- */
+    cudaEventRecord(ev_start);
+    cuda_rmsnorm_fp16(s->d_xb, s->d_x,
+                      w->d_rms_ffn_weight + (size_t)l * dim, dim);
+    cudaEventRecord(ev_stop);
+    cudaEventSynchronize(ev_stop);
+    cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
+    printf("6. RMSNorm (FFN):              %.3f ms\n", elapsed_ms);
+    stage6_ms = elapsed_ms; total_ms += elapsed_ms;
+
+    /* --- Stage 7: FFN W1 + W3 --- */
+    cudaEventRecord(ev_start);
+    cublas_sgemv_fp16(dim, hidden_dim,
+                      w->d_w1 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb);
+    cublas_sgemv_fp16(dim, hidden_dim,
+                      w->d_w3 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb2);
+    cudaEventRecord(ev_stop);
+    cudaEventSynchronize(ev_stop);
+    cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
+    printf("7. FFN W1+W3:                  %.3f ms\n", elapsed_ms);
+    stage7_ms = elapsed_ms; total_ms += elapsed_ms;
+
+    /* --- Stage 8: SwiGLU + W2 + Residual --- */
+    cudaEventRecord(ev_start);
+    { int b = (hidden_dim + 255) / 256;
+      swiglu_kernel<<<b, 256>>>(s->d_hb, s->d_hb2, hidden_dim); }
+    cublas_sgemv_fp16(hidden_dim, dim,
+                      w->d_w2 + (size_t)l * hidden_dim * dim, s->d_hb, s->d_xb);
+    { int b = (dim + 255) / 256; add_kernel<<<b, 256>>>(s->d_x, s->d_xb, dim); }
+    cudaEventRecord(ev_stop);
+    cudaEventSynchronize(ev_stop);
+    cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
+    printf("8. SwiGLU + W2:                %.3f ms\n", elapsed_ms);
+    stage8_ms = elapsed_ms; total_ms += elapsed_ms;
+
+    printf("\nTOTAL LAYER TIME:        %.3f ms\n", total_ms);
+    float est_32_layer_ms = total_ms * p->n_layers;
+    float est_tok_s       = est_32_layer_ms > 0.0f ? (1000.0f / est_32_layer_ms) : 0.0f;
+    printf("ESTIMATED %d-LAYER TIME: %.1f ms = %.1f tok/s\n",
+           p->n_layers, est_32_layer_ms, est_tok_s);
+
+    cudaEventDestroy(ev_start);
+    cudaEventDestroy(ev_stop);
+    g_profile_triggered = true;
+    append_profile_metrics_csv(
+        token, pos, p->dim, p->hidden_dim, p->n_heads, p->n_kv_heads,
+        stage1_ms, stage2_ms, stage3_ms, stage4_ms,
+        stage5_ms, stage6_ms, stage7_ms, stage8_ms,
+        total_ms, est_32_layer_ms, est_tok_s);
+    printf("Profiling metrics appended to %s\n", g_profile_csv_path);
+}
+
+// ----------------------------------------------------------------------------
 // GPU forward pass (FP16 weights, FP32 activations)
 
 static float* forward_gpu(Transformer* t, int token, int pos) {
@@ -560,6 +764,10 @@ static float* forward_gpu(Transformer* t, int token, int pos) {
     int hidden_dim = p->hidden_dim;
     int head_size  = dim / p->n_heads;
     float scale    = 1.0f / sqrtf((float)head_size);
+
+    /* Profiling: run once at the requested token position */
+    if (g_enable_profile && pos == g_profile_pos && !g_profile_triggered)
+        profile_7b_bottlenecks(t, token, pos);
 
     /* 1. Token embedding: copy FP16 row to FP32 d_x */
     {
@@ -1075,6 +1283,8 @@ static void error_usage(void) {
     fprintf(stderr, "  -n <int>     number of steps (default 256)\n");
     fprintf(stderr, "  -i <string>  prompt\n");
     fprintf(stderr, "  -z <string>  tokenizer path (default: tokenizer.bin)\n");
+    fprintf(stderr, "  -P <int>     profile layer-0 bottlenecks at this token pos (default: off)\n");
+    fprintf(stderr, "  -R <string>  profiling CSV output path (default: cublas_fp16_profile_metrics.csv)\n");
     fprintf(stderr, "  --verify     compare GPU logits with CPU FP16 each token\n");
     exit(EXIT_FAILURE);
 }
@@ -1101,6 +1311,15 @@ int main(int argc, char* argv[]) {
             else if (strcmp(argv[i], "-n") == 0) steps       = atoi(argv[++i]);
             else if (strcmp(argv[i], "-i") == 0) prompt      = argv[++i];
             else if (strcmp(argv[i], "-z") == 0) tokenizer_path = argv[++i];
+            else if (strcmp(argv[i], "-P") == 0) {
+                g_enable_profile = true;
+                g_profile_pos    = atoi(argv[++i]);
+            }
+            else if (strcmp(argv[i], "-R") == 0) {
+                g_enable_profile = true;
+                strncpy(g_profile_csv_path, argv[++i], sizeof(g_profile_csv_path) - 1);
+                g_profile_csv_path[sizeof(g_profile_csv_path) - 1] = '\0';
+            }
             else error_usage();
         } else { error_usage(); }
     }

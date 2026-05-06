@@ -506,7 +506,7 @@ def _compile_and_run_cuda_impl(
         save_output: Whether to save output to profiling file
         output_file: Name of the output file to save in the cache volume
         cuda_impl: CUDA implementation to compile and run ("cublas", "flash", "tiled", or "cublas_fp16")
-        profile_enable: Enable per-layer profiling inside CUDA binary (not supported by cublas_fp16)
+        profile_enable: Enable per-layer profiling inside CUDA binary (-P and -R flags). All implementations supported.
         profile_pos: Token position at which profiling is triggered
         profile_csv: CSV output path inside container (use /cache for persistence)
     """
@@ -942,10 +942,11 @@ def _compile_and_run_cuda_impl(
         "-s", str(seed)
     ]
     if profile_enable:
-        # run_fp16.cu (cublas_fp16) does not implement -P/-R profiling flags.
-        # The other implementations (cublas, flash, tiled) do support them.
+        # cublas_fp16 supports -P (per-layer bottleneck print) but not -R (CSV output).
+        # The other implementations (cublas, flash, tiled) support both -P and -R.
         if cuda_impl_key == "cublas_fp16":
-            log_and_capture("⚠️  Per-layer profiling (-P/-R flags) is not supported by run_fp16.cu. Ignoring --profile-enable for cublas_fp16.")
+            run_cmd.extend(["-P", str(profile_pos), "-R", profile_csv])
+            log_and_capture("ℹ️  cublas_fp16: passing -P and -R for bottleneck analysis and CSV output.")
         else:
             run_cmd.extend(["-P", str(profile_pos), "-R", profile_csv])
     
@@ -1564,7 +1565,7 @@ def main(
         output_file: Name of the output file to save in cache volume
         list_profiling: List saved profiling files in cache volume
         cuda_impl: CUDA implementation source to use ("cublas", "flash", "tiled", or "cublas_fp16")
-        profile_enable: Enable per-layer profiling in CUDA binary (not supported by cublas_fp16)
+        profile_enable: Enable per-layer profiling in CUDA binary (-P flag). cublas_fp16 supports -P but not CSV (-R).
         profile_pos: Token position where profiling is triggered
         profile_csv: CSV output path for stage timings (recommend /cache/...)
     """
