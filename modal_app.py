@@ -139,6 +139,10 @@ CUDA_SOURCE_VARIANTS = {
         "source_file": "llama2_tiled.cu",
         "binary_name": "llama2_tiled",
     },
+    "cublas_fp16": {
+        "source_file": "llama2_cublas_fp16.cu",
+        "binary_name": "llama2_cublas_fp16",
+    },
 }
 
 def get_model_config(model_name):
@@ -501,8 +505,8 @@ def _compile_and_run_cuda_impl(
         use_boto3: Use boto3 instead of AWS CLI for S3 downloads
         save_output: Whether to save output to profiling file
         output_file: Name of the output file to save in the cache volume
-        cuda_impl: CUDA implementation to compile and run ("cublas", "flash", or "tiled")
-        profile_enable: Enable per-layer profiling inside CUDA binary
+        cuda_impl: CUDA implementation to compile and run ("cublas", "flash", "tiled", or "cublas_fp16")
+        profile_enable: Enable per-layer profiling inside CUDA binary (not supported by cublas_fp16)
         profile_pos: Token position at which profiling is triggered
         profile_csv: CSV output path inside container (use /cache for persistence)
     """
@@ -938,7 +942,12 @@ def _compile_and_run_cuda_impl(
         "-s", str(seed)
     ]
     if profile_enable:
-        run_cmd.extend(["-P", str(profile_pos), "-R", profile_csv])
+        # run_fp16.cu (cublas_fp16) does not implement -P/-R profiling flags.
+        # The other implementations (cublas, flash, tiled) do support them.
+        if cuda_impl_key == "cublas_fp16":
+            log_and_capture("⚠️  Per-layer profiling (-P/-R flags) is not supported by run_fp16.cu. Ignoring --profile-enable for cublas_fp16.")
+        else:
+            run_cmd.extend(["-P", str(profile_pos), "-R", profile_csv])
     
     log_and_capture(f"🔧 Run command: {' '.join(run_cmd)}")
     
@@ -1554,8 +1563,8 @@ def main(
         save_output: Save output to profiling file in cache volume
         output_file: Name of the output file to save in cache volume
         list_profiling: List saved profiling files in cache volume
-        cuda_impl: CUDA implementation source to use ("cublas", "flash", or "tiled")
-        profile_enable: Enable per-layer profiling in CUDA binary
+        cuda_impl: CUDA implementation source to use ("cublas", "flash", "tiled", or "cublas_fp16")
+        profile_enable: Enable per-layer profiling in CUDA binary (not supported by cublas_fp16)
         profile_pos: Token position where profiling is triggered
         profile_csv: CSV output path for stage timings (recommend /cache/...)
     """
@@ -1717,8 +1726,9 @@ def main(
                         try:
                             # Use explicit destination filename and avoid capturing output to prevent
                             # Windows console encoding issues from CLI unicode characters.
+                            # --force overwrites any existing local file from a previous run.
                             subprocess.run(
-                                ["modal", "volume", "get", "huggingface-cache", candidate_remote_path, local_path],
+                                ["modal", "volume", "get", "--force", "huggingface-cache", candidate_remote_path, local_path],
                                 check=True,
                             )
                             print(f"✅ Downloaded: {candidate_remote_path} -> {local_path}")
