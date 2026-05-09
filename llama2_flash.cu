@@ -3622,9 +3622,13 @@ void profile_7b_bottlenecks(Transformer* transformer, int token, int pos) {
     // 4. FlashAttention
     cudaEventRecord(start);
     CUDA_CHECK(cudaMemset(s->d_xb, 0, dim * sizeof(float)));
-    const int M = 164 * 1024;  // A100 optimized
+    // Use same parameters as forward_gpu to stay within default 48 KB shared memory limit.
+    // M = 164*1024 with actual_Bc up to 51 produces ~53 KB smem which exceeds the default
+    // per-block limit (48 KB) and causes a silent launch failure whose sticky error surfaces
+    // at the next cudaDeviceSynchronize() call (inside cuda_matmul_2d_tiled).
+    const int M = 48 * 1024;  // match forward_gpu: keeps smem within 48 KB default limit
     const int Bc = min(M / (4 * head_size), pos + 1);
-    const int actual_Bc = min(Bc, 256);  // A100 optimized
+    const int actual_Bc = min(Bc, 32);  // match forward_gpu cap
     
     size_t smem_size = sizeof(float) * (
         actual_Bc * head_size + actual_Bc * head_size + head_size +
@@ -3635,12 +3639,15 @@ void profile_7b_bottlenecks(Transformer* transformer, int token, int pos) {
     dim3 block_fa(256);
     float* d_key_cache_layer = s->d_key_cache + loff;
     float* d_value_cache_layer = s->d_value_cache + loff;
-    
+
+    // Drain any stale sticky error before launch so a failure is reported here.
+    cudaGetLastError();
     multi_head_flashattention_kernel<<<grid_fa, block_fa, smem_size>>>(
         s->d_q, d_key_cache_layer, d_value_cache_layer, s->d_xb,
         pos + 1, head_size, p->n_heads, p->n_kv_heads,
         p->n_kv_heads * head_size, scale, actual_Bc
     );
+    CUDA_CHECK(cudaGetLastError());  // catch launch errors immediately
     CUDA_CHECK(cudaDeviceSynchronize());
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);

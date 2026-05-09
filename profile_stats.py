@@ -142,11 +142,16 @@ def main():
     total_rows = len(rows)
     if args.warmup_skip > 0:
         if args.warmup_skip >= total_rows:
-            raise ValueError(
-                f"--warmup-skip {args.warmup_skip} >= total rows {total_rows}; "
-                "nothing left to summarise."
+            effective_skip = max(0, total_rows - 1)
+            print(
+                f"Warning: --warmup-skip {args.warmup_skip} >= total rows {total_rows}; "
+                f"clamping to {effective_skip} so at least 1 row is analysed."
             )
-        rows = rows[args.warmup_skip:]
+        else:
+            effective_skip = args.warmup_skip
+        rows = rows[effective_skip:]
+    else:
+        effective_skip = 0
 
     summaries = {}
     for col in metric_cols:
@@ -154,7 +159,7 @@ def main():
         summaries[col] = summarize(vals)
 
     print("=== Profiling Statistical Summary ===")
-    print(f"Input rows: {total_rows} (skipped first {args.warmup_skip} warmup row(s), analysed {len(rows)})")
+    print(f"Input rows: {total_rows} (skipped first {effective_skip} warmup row(s), analysed {len(rows)})")
     if metric_cols != PROFILE_COLUMNS:
         print("Detected non-default CSV schema; summarizing numeric metric columns:")
         print(", ".join(metric_cols))
@@ -194,7 +199,7 @@ def main():
                 writer.writerow([
                     col,
                     s["n"],
-                    args.warmup_skip,
+                    effective_skip,
                     f"{s['mean']:.8f}",
                     f"{s['std']:.8f}",
                     f"{s['min']:.8f}",
