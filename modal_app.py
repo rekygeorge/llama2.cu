@@ -362,6 +362,7 @@ def _save_output_to_cache(output_lines, output_file, start_time, model, prompt, 
         
         # Prepare file path in cache volume
         cache_output_path = f"/cache/{output_file}"
+        os.makedirs(os.path.dirname(cache_output_path), exist_ok=True)
         
         # Create summary information
         summary_info = [
@@ -1631,7 +1632,9 @@ def main(
     user_overrode_profile_csv = (profile_csv != "/cache/flash_profile_metrics.csv")
 
     if not user_overrode_output_file:
-        output_file = f"profiling_{cuda_impl_key}.txt"
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = f"profiling_runs/{cuda_impl_key}/profiling_{cuda_impl_key}_{timestamp}.txt"
 
     if profile_enable and not user_overrode_profile_csv:
         profile_csv = f"/cache/profiling_{cuda_impl_key}.csv"
@@ -1714,7 +1717,8 @@ def main(
                     continue
                 downloaded.add(remote_path)
                 local_name = os.path.basename(remote_path)
-                local_path = os.path.join(download_dir, local_name)
+                local_path = os.path.join(download_dir, remote_path)
+                os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
                 remote_candidates = [remote_path]
                 if remote_path.startswith("/cache/"):
                     remote_candidates.append(remote_path[len("/cache/"):])
@@ -1722,20 +1726,39 @@ def main(
                     remote_candidates.append(f"/cache/{remote_path}")
 
                 download_ok = False
+                tmp_local_path = local_path + ".tmp"
                 for attempt in range(1, 4):
                     for candidate_remote_path in remote_candidates:
                         try:
-                            # Use explicit destination filename and avoid capturing output to prevent
-                            # Windows console encoding issues from CLI unicode characters.
-                            # --force overwrites any existing local file from a previous run.
+                            # Download to a temp path first to avoid WinError 32 when
+                            # the final destination is open in another process (e.g. VS Code).
                             subprocess.run(
-                                ["modal", "volume", "get", "--force", "huggingface-cache", candidate_remote_path, local_path],
+                                ["modal", "volume", "get", "--force", "huggingface-cache", candidate_remote_path, tmp_local_path],
                                 check=True,
                             )
-                            print(f"✅ Downloaded: {candidate_remote_path} -> {local_path}")
+                            # Copy content into the final destination.
+                            # os.replace() fails on Windows when the destination is open
+                            # in another process (e.g. VS Code). Instead, read the temp
+                            # file and write its bytes directly - open('wb') can succeed
+                            # even when another app holds a shared read lock on the file.
+                            try:
+                                with open(tmp_local_path, 'rb') as f_in:
+                                    data = f_in.read()
+                                with open(local_path, 'wb') as f_out:
+                                    f_out.write(data)
+                                os.remove(tmp_local_path)
+                                effective_path = local_path
+                            except OSError:
+                                # Still locked for writing; keep the temp as a fallback.
+                                effective_path = tmp_local_path
+                                print(f"⚠️  {local_name} is locked for writing by another application.")
+                                print(f"   Downloaded copy saved as: {effective_path}")
+                            print(f"✅ Downloaded: {candidate_remote_path} -> {effective_path}")
                             download_ok = True
                             break
                         except subprocess.CalledProcessError as e:
+                            if os.path.exists(tmp_local_path):
+                                os.remove(tmp_local_path)
                             last_error = e
 
                     if download_ok:

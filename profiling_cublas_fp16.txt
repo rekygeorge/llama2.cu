@@ -1,26 +1,26 @@
 ================================================================================
 CUDA LLAMA2 EXECUTION SUMMARY
 ================================================================================
-Timestamp: 2026-05-06 05:13:44 UTC
+Timestamp: 2026-05-08 06:52:45 UTC
 Model: llama2_7b.bin
 Prompt: Once upon a time
 Steps: 256
 Temperature: 1.0
 Top-p: 0.9
 Seed: 42
-Execution Time: 286.76 seconds
+Execution Time: 229.99 seconds
 ================================================================================
 
 EXECUTION LOG:
 
-🕐 Execution started: 2026-05-06 05:08:57 UTC
+🕐 Execution started: 2026-05-08 06:48:55 UTC
 🚀 Starting CUDA Llama2 compilation and execution with S3 support...
 📂 Working directory: /app
 🤖 Selected model: llama2_7b.bin
 🧩 CUDA implementation: cublas_fp16 (llama2_cublas_fp16.cu)
 📊 Model info: 7B parameter model (large, high quality)
 📏 Expected size: 26.0 GB
-📁 Directory contents: ['.gitignore', '.git', 'profiling_cublas.txt', 'profiling.txt', 'profiling_runs', 'llama2_flash.cu', 'llama2_cublas.cu', '.env', 'llama2.c', 'profiling_cublas.csv', 'tokenizer.bin', 'profiling_cublas_fp16.txt', 'modal_app.py', 'llama2_cublas_fp16.c', 'llama2_cublas_fp16.cu', 'profiling_cublas_fp16.csv', 'profile_stats.py', 'llama2_tiled_backup.cu', 'README.md', 'vllm_inference.py', 'Tests', 'win.c', 'run_profiling_experiment.sh', '__pycache__', 'llama2_tiled.cu', 'stories15M.bin', 'Makefile', 'win.h', 'tokenizer.model']
+📁 Directory contents: ['llama2_tiled_backup.cu', 'llama2.c', 'llama2_cublas_fp16.cu', '.env', 'profile_stats.py', '__pycache__', 'vllm_inference.py', 'profiling_runs', '.git', 'llama2_cublas_fp16.c', 'tokenizer.model', 'win.c', 'llama2_cublas.cu', 'modal_app.py', 'profiling_cublas_fp16.csv', 'Makefile', '.gitignore', 'profiling_cublas_fp16.txt', 'tokenizer.bin', 'run_profiling_experiment.sh', 'profiling.txt', 'llama2_tiled.cu', 'win.h', 'stories15M.bin', 'README.md', 'llama2_flash.cu', 'Tests', 'profiling_cublas.txt', 'profiling_cublas.csv']
 
 🔍 Verifying CUDA installation...
 ✅ CUDA Compiler: nvcc: NVIDIA (R) Cuda compiler driver
@@ -29,7 +29,7 @@ Built on Wed_Jan_15_19:20:09_PST_2025
 Cuda compilation tools, release 12.8, V12.8.61
 Build cuda_12.8.r12.8/compiler.35404655_0
 ✅ GPU Status:
-Wed May  6 05:08:57 2026       
+Fri May  8 06:48:55 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
 +-----------------------------------------+------------------------+----------------------+
@@ -37,8 +37,8 @@ Wed May  6 05:08:57 2026
 | Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
-|   0  NVIDIA A100 80GB PCIe          On  |   00000001:00:00.0 Off |                    0 |
-| N/A   36C    P0             52W /  300W |       0MiB /  81920MiB |      0%      Default |
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:00:0B.0 Off |                    0 |
+| N/A   33C    P0             54W /  400W |       0MiB /  40960MiB |      0%      Default |
 |                                         |                        |             Disabled |
 +-----------------------------------------+------------------------+----------------------+
 
@@ -51,10 +51,10 @@ Wed May  6 05:08:57 2026
 +-----------------------------------------------------------------------------------------+
 
 🎯 GPU Details:
-   Name: NVIDIA A100 80GB PCIe
+   Name: NVIDIA A100-SXM4-40GB
    Compute Capability: 8.0
    Driver Version: 580.95.05
-   Total Memory: 81920 MB
+   Total Memory: 40960 MB
 🔧 CUDA Toolkit: Cuda compilation tools, release 12.8, V12.8.61
 ✅ All required source files found
 
@@ -88,52 +88,52 @@ ptxas info    : Compiling entry function '_Z19fp32_to_fp16_kernelP6__halfPKfi' f
 ptxas info    : Function properties for _Z19fp32_to_fp16_kernelP6__halfPKfi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 8 registers, used 0 barriers, 372 bytes cmem[0]
-ptxas info    : Compile time = 2.484 ms
+ptxas info    : Compile time = 4.257 ms
 ptxas info    : Compiling entry function '_Z22flash_attention_kernelPKfS0_S0_Pfiiiif' for 'sm_80'
 ptxas info    : Function properties for _Z22flash_attention_kernelPKfS0_S0_Pfiiiif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 56 registers, used 1 barriers, 404 bytes cmem[0]
-ptxas info    : Compile time = 27.231 ms
+ptxas info    : Compile time = 37.857 ms
 ptxas info    : Compiling entry function '_Z10add_kernelPfPKfi' for 'sm_80'
 ptxas info    : Function properties for _Z10add_kernelPfPKfi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
-ptxas info    : Compile time = 1.416 ms
+ptxas info    : Compile time = 1.393 ms
 ptxas info    : Compiling entry function '_Z13swiglu_kernelPfPKfi' for 'sm_80'
 ptxas info    : Function properties for _Z13swiglu_kernelPfPKfi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 12 registers, used 0 barriers, 372 bytes cmem[0]
-ptxas info    : Compile time = 1.921 ms
+ptxas info    : Compile time = 2.316 ms
 ptxas info    : Compiling entry function '_Z11rope_kernelPfS_iiii' for 'sm_80'
 ptxas info    : Function properties for _Z11rope_kernelPfS_iiii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 16 registers, used 0 barriers, 384 bytes cmem[0]
-ptxas info    : Compile time = 4.267 ms
+ptxas info    : Compile time = 5.446 ms
 ptxas info    : Compiling entry function '_Z18embed_fp16_to_fp32PfPK6__halfii' for 'sm_80'
 ptxas info    : Function properties for _Z18embed_fp16_to_fp32PfPK6__halfii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 10 registers, used 0 barriers, 376 bytes cmem[0]
-ptxas info    : Compile time = 0.828 ms
+ptxas info    : Compile time = 1.191 ms
 ptxas info    : Compiling entry function '_Z19rmsnorm_fp16_kernelPfPKfPK6__halfif' for 'sm_80'
 ptxas info    : Function properties for _Z19rmsnorm_fp16_kernelPfPKfPK6__halfif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 13 registers, used 1 barriers, 16 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 3.651 ms
+ptxas info    : Compile time = 5.324 ms
 
 ✅ Executable created: /app/llama2_cublas_fp16
 📋 Executable info: /app/llama2_cublas_fp16: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=63529759eb87ba7a473558bef8f7753c523d616c, for GNU/Linux 3.2.0, not stripped
 📚 Library dependencies:
-   linux-vdso.so.1 (0x00002b00111c2000)
-   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002b0011200000)
-   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002b0011600000)
-   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002b00114b4000)
-   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002b0018800000)
-   /lib64/ld-linux-x86-64.so.2 (0x0000556e45110000)
-   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002b00111e4000)
-   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002b00111eb000)
-   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002b00111f0000)
-   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002b0018c00000)
-   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002b001159b000)
+   linux-vdso.so.1 (0x00002a8a55759000)
+   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002a8a55800000)
+   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002a8a55c00000)
+   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002a8a55ab4000)
+   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002a8a5ce00000)
+   /lib64/ld-linux-x86-64.so.2 (0x000055b6b9f79000)
+   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002a8a5577d000)
+   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002a8a55782000)
+   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002a8a55787000)
+   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002a8a5d200000)
+   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002a8a5578c000)
 
 🚀 Running CUDA Llama2 inference...
 🤖 Model: llama2_7b.bin
@@ -150,7 +150,7 @@ ptxas info    : Compile time = 3.651 ms
    CUDA_VISIBLE_DEVICES: Not set
    LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
    PATH: /usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin...
-   Available GPUs: GPU 0: NVIDIA A100 80GB PCIe (UUID: GPU-cd1684a0-7688-d15d-df7d-af1a6b5c68fc)
+   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-5195ce45-4a45-b95f-23d6-5d7ee0574f54)
 
 🔄 Execution Strategy #1: Standard execution with 96KB shared memory
    Environment: {'CUDA_DEVICE_MAX_CONNECTIONS': '32'}
@@ -161,27 +161,29 @@ ptxas info    : Compile time = 3.651 ms
 🤖 LLAMA2 CUDA OUTPUT (llama2_7b.bin) - Strategy 1:
 ============================================================
 [fp16] Uploading weights to GPU as FP16...
-STDERR: GPU: NVIDIA A100 80GB PCIe (CC 8.0, 79.3 GB)
+STDERR: GPU: NVIDIA A100-SXM4-40GB (CC 8.0, 39.5 GB)
 [fp16] Weights: ~500 MB FP32 -> ~12602 MB FP16 on GPU
-STDERR: Achieved tok/s: 76.62
+STDERR: Achieved tok/s: 62.03
 Once upon a time, this grand British landscape belonged
 === FP16 MODEL BOTTLENECK ANALYSIS (Layer 0, pos=10) ===
-1. RMSNorm (attention):        0.014 ms
-2. QKV Projections:            0.112 ms
-3. RoPE + KV Cache:            0.018 ms
-4. Flash Attention:            0.028 ms
-5. Output Proj + Residual:     0.041 ms
-6. RMSNorm (FFN):              0.011 ms
-7. FFN W1+W3:                  0.130 ms
-8. SwiGLU + W2:                0.078 ms
+1. RMSNorm (attention):        0.016 ms
+2. QKV Projections:            0.142 ms
+3. RoPE + KV Cache:            0.029 ms
+4. Flash Attention:            0.035 ms
+5. Output Proj + Residual:     0.052 ms
+6. RMSNorm (FFN):              0.014 ms
+7. FFN W1+W3:                  0.167 ms
+8. SwiGLU + W2:                0.097 ms
 
-TOTAL LAYER TIME:        0.432 ms
-ESTIMATED 32-LAYER TIME: 13.8 ms = 72.3 tok/s
+TOTAL LAYER TIME:        0.553 ms
+ESTIMATED 32-LAYER TIME: 17.7 ms = 56.5 tok/s
 Profiling metrics appended to /cache/profiling_cublas_fp16.csv
- to a noble and generous widow. After her death the estate was split between her children. It has now come to be owned and loved by their descendants. The Hall was extensively altered by the successive owners. New wings were added, rooms were re-modelled, and the old Tudor manor was replaced with a new Georgian house.
-During the recent past, the 4th Earl of Normanton and his family saved the Hall from ruin, made substantial repairs and refurbishments, and returned the house to its original layout. They also set up a very successful dairy farm and one of the finest estates in the country. The entire estate has been passed down the generations, and in 2009 it came to be owned by Sir Michael and Lady Cook.
-The grounds are beautifully presented and the walled gardens offer a quiet and pleasant setting for wedding ceremonies. The staff at Normanton Hall are efficient and dedicated, and they take enormous pride in their work.
-Couples who chose Normanton Hall as their venue are also given the opportunity to enjoy a bespoke and individual
+ to a noble and generous widow. After her death the estate was split between her children. It has now come to be owned and loved by their descendants. The Hall was extensively altered by the successive owners. New wings were added, old ones demolished. Originally a Tudor mansion, it is now more like a Victorian country house. It is home to the Hare family who live there and keep the estate working for today's visitors.
+Before being separated from her husband, the hall belonged to Margaret of Newcastle. She wrote some of the earliest surviving English books for women: "The Countesse of Newcastle's Revels," and "The Countesse of Newcastle's Nine Dayes Wonder."
+"Thou art the spirit of a generous mind.
+Which strives to worke, but stumbles on the ground."
+When Margaret of Newcastle inherited the estate, it was in debt. With her 'noble and generous' character she paid off the debt and began to leave it to her descendants in her will.
+"The Countesse of Newcastle's Re
 ============================================================
 🔍 Process completed with return code: 0
 ✅ Strategy 1 succeeded!

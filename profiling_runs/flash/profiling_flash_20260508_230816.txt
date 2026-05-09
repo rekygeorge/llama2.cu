@@ -1,26 +1,26 @@
 ================================================================================
 CUDA LLAMA2 EXECUTION SUMMARY
 ================================================================================
-Timestamp: 2026-05-09 04:35:24 UTC
+Timestamp: 2026-05-09 06:11:16 UTC
 Model: llama2_7b.bin
 Prompt: Once upon a time
 Steps: 256
 Temperature: 1.0
 Top-p: 0.9
 Seed: 42
-Execution Time: 176.03 seconds
+Execution Time: 175.45 seconds
 ================================================================================
 
 EXECUTION LOG:
 
-🕐 Execution started: 2026-05-09 04:32:28 UTC
+🕐 Execution started: 2026-05-09 06:08:20 UTC
 🚀 Starting CUDA Llama2 compilation and execution with S3 support...
 📂 Working directory: /app
 🤖 Selected model: llama2_7b.bin
-🧩 CUDA implementation: cublas (llama2_cublas.cu)
+🧩 CUDA implementation: flash (llama2_flash.cu)
 📊 Model info: 7B parameter model (large, high quality)
 📏 Expected size: 26.0 GB
-📁 Directory contents: ['profiling_cublas_fp16.csv', 'llama2_tiled_backup.cu', 'llama2_cublas_fp16.c', 'README.md', 'tokenizer.model', 'win.h', 'llama2.c', '.git', 'profile_stats.py', 'Makefile', 'llama2_cublas.cu', 'profiling.txt', 'profiling_runs', '.env', 'llama2_flash.cu', 'Tests', 'llama2_tiled.cu', 'profiling_cublas.txt', 'llama2_cublas_fp16.cu', 'win.c', 'run_profiling_experiment.sh', 'profiling_cublas_fp16.txt', 'modal_app.py', 'profiling_cublas.csv', '.gitignore', 'stories15M.bin', '__pycache__', 'vllm_inference.py', 'tokenizer.bin']
+📁 Directory contents: ['Tests', 'profiling_flash.csv', 'run_profiling_experiment.sh', '__pycache__', '.env', 'README.md', 'llama2_cublas_fp16.c', 'Makefile', '.gitignore', '.git', 'llama2_cublas_fp16.cu', 'llama2_flash.cu', 'vllm_inference.py', 'profile_stats.py', 'stories15M.bin', 'profiling.txt', 'profiling_cublas.txt', 'llama2_cublas.cu', 'win.h', 'modal_app.py', 'win.c', 'llama2.c', 'profiling_runs', 'profiling_cublas_fp16.txt', 'profiling_flash.txt', 'tokenizer.bin', 'profiling_cublas_fp16.csv', 'llama2_tiled.cu', 'tokenizer.model', 'llama2_tiled_backup.cu', 'profiling_cublas.csv']
 
 🔍 Verifying CUDA installation...
 ✅ CUDA Compiler: nvcc: NVIDIA (R) Cuda compiler driver
@@ -29,7 +29,7 @@ Built on Wed_Jan_15_19:20:09_PST_2025
 Cuda compilation tools, release 12.8, V12.8.61
 Build cuda_12.8.r12.8/compiler.35404655_0
 ✅ GPU Status:
-Sat May  9 04:32:28 2026       
+Sat May  9 06:08:20 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
 +-----------------------------------------+------------------------+----------------------+
@@ -37,8 +37,8 @@ Sat May  9 04:32:28 2026
 | Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
-|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:15:00.0 Off |                    0 |
-| N/A   34C    P0             53W /  400W |       0MiB /  40960MiB |      0%      Default |
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:50:00.0 Off |                    0 |
+| N/A   34C    P0             60W /  400W |       0MiB /  40960MiB |      0%      Default |
 |                                         |                        |             Disabled |
 +-----------------------------------------+------------------------+----------------------+
 
@@ -74,41 +74,53 @@ Sat May  9 04:32:28 2026
 🔍 Auto-detected GPU compute capability: 8.0 -> sm_80
 🎯 Detected GPU type: A100, using CUDA architecture: sm_80
 ⚡ A100 detected: Adding tensor core and advanced optimization flags
-🔧 Compilation command: nvcc -O3 -arch=sm_80 -std=c++17 --use_fast_math --ptxas-options=-v -maxrregcount=64 -Xptxas -maxrregcount=64 -Xptxas --opt-level=3 --default-stream per-thread -DMAX_SHARED_MEMORY_PER_BLOCK=98304 -DUSE_TENSOR_CORES -Xptxas -O3 -o llama2_cublas llama2_cublas.cu -lcudart -lcublas
+🔧 Compilation command: nvcc -O3 -arch=sm_80 -std=c++17 --use_fast_math --ptxas-options=-v -maxrregcount=64 -Xptxas -maxrregcount=64 -Xptxas --opt-level=3 --default-stream per-thread -DMAX_SHARED_MEMORY_PER_BLOCK=98304 -DUSE_TENSOR_CORES -Xptxas -O3 -o llama2_flash llama2_flash.cu -lcudart -lcublas
 ✅ CUDA compilation successful!
-⚠️  Compiler warnings: llama2_cublas.cu(574): warning #177-D: variable "warpId" was declared but never referenced
+⚠️  Compiler warnings: llama2_flash.cu(576): warning #177-D: variable "warpId" was declared but never referenced
       int warpId = tid / 32;
           ^
 
 Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
 
-llama2_cublas.cu(575): warning #177-D: variable "laneId" was declared but never referenced
+llama2_flash.cu(577): warning #177-D: variable "laneId" was declared but never referenced
       int laneId = tid % 32;
           ^
 
-llama2_cublas.cu(1519): warning #177-D: variable "temp_results" was declared but never referenced
+llama2_flash.cu(1521): warning #177-D: variable "temp_results" was declared but never referenced
       float* temp_results = weight_cache + cache_size;
              ^
 
-llama2_cublas.cu(1775): warning #177-D: variable "output_buffer" was declared but never referenced
+llama2_flash.cu(1777): warning #177-D: variable "output_buffer" was declared but never referenced
       float* output_buffer = weight_tile + 8192;
              ^
 
-llama2_cublas.cu(3639): warning #177-D: variable "layer_wo" was declared but never referenced
-      float* layer_wo = w->d_wo + l * dim * dim;
+llama2_flash.cu(3520): warning #177-D: variable "alpha" was declared but never referenced
+      const float alpha = 1.0f, beta = 0.0f;
+                  ^
+
+llama2_flash.cu(3520): warning #177-D: variable "beta" was declared but never referenced
+      const float alpha = 1.0f, beta = 0.0f;
+                                ^
+
+llama2_flash.cu(3556): warning #177-D: variable "layer_wq" was declared but never referenced
+      float* layer_wq = w->d_wq + l * dim * dim;
              ^
 
-llama2_cublas.cu(3802): warning #550-D: variable "max_shared_mem" was set but never used
+llama2_flash.cu(3557): warning #177-D: variable "layer_wk" was declared but never referenced
+      float* layer_wk = w->d_wk + l * dim * kv_dim;
+             ^
+
+llama2_flash.cu(3558): warning #177-D: variable "layer_wv" was declared but never referenced
+      float* layer_wv = w->d_wv + l * dim * kv_dim;
+             ^
+
+llama2_flash.cu(3843): warning #550-D: variable "max_shared_mem" was set but never used
       size_t max_shared_mem = 48 * 1024;
              ^
 
-llama2_cublas.cu(3820): warning #177-D: variable "err" was declared but never referenced
+llama2_flash.cu(3861): warning #177-D: variable "err" was declared but never referenced
       cudaError_t err;
                   ^
-
-llama2_cublas.cu(5586): warning #177-D: variable "layer_wo" was declared but never referenced
-          float* layer_wo = w->d_wo + l * dim * dim;
-                 ^
 
 ptxas info    : Overriding maximum register limit 256 for '_Z35output_projection_rtx2070_optimizedPKfS0_Pfif' with  64 of maxrregcount option
 ptxas info    : Overriding maximum register limit 256 for '_Z32output_projection_a100_optimizedPKfS0_Pfif' with  64 of maxrregcount option
@@ -157,255 +169,255 @@ ptxas info    : Compiling entry function '_Z35output_projection_rtx2070_optimize
 ptxas info    : Function properties for _Z35output_projection_rtx2070_optimizedPKfS0_Pfif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 40 registers, used 1 barriers, 384 bytes cmem[0]
-ptxas info    : Compile time = 13.129 ms
+ptxas info    : Compile time = 13.170 ms
 ptxas info    : Compiling entry function '_Z32output_projection_a100_optimizedPKfS0_Pfif' for 'sm_80'
 ptxas info    : Function properties for _Z32output_projection_a100_optimizedPKfS0_Pfif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 56 registers, used 1 barriers, 384 bytes cmem[0]
-ptxas info    : Compile time = 19.386 ms
+ptxas info    : Compile time = 19.377 ms
 ptxas info    : Compiling entry function '_Z32rmsnorm_kernel_rtx2070_optimizedPfPKfS1_if' for 'sm_80'
 ptxas info    : Function properties for _Z32rmsnorm_kernel_rtx2070_optimizedPfPKfS1_if
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 16 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 6.081 ms
+ptxas info    : Compile time = 6.100 ms
 ptxas info    : Compiling entry function '_Z29rmsnorm_kernel_a100_optimizedPfPKfS1_if' for 'sm_80'
 ptxas info    : Function properties for _Z29rmsnorm_kernel_a100_optimizedPfPKfS1_if
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 22 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 18.747 ms
+ptxas info    : Compile time = 18.584 ms
 ptxas info    : Compiling entry function '_Z30fused_swiglu_w2_chunked_kernelPKfS0_S0_Pfiiff' for 'sm_80'
 ptxas info    : Function properties for _Z30fused_swiglu_w2_chunked_kernelPKfS0_S0_Pfiiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 32 registers, used 1 barriers, 400 bytes cmem[0]
-ptxas info    : Compile time = 11.248 ms
+ptxas info    : Compile time = 11.219 ms
 ptxas info    : Compiling entry function '_Z22fused_swiglu_w2_kernelPKfS0_S0_Pfiiff' for 'sm_80'
 ptxas info    : Function properties for _Z22fused_swiglu_w2_kernelPKfS0_S0_Pfiiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 40 registers, used 1 barriers, 400 bytes cmem[0]
-ptxas info    : Compile time = 11.573 ms
+ptxas info    : Compile time = 11.578 ms
 ptxas info    : Compiling entry function '_Z29ffn_w1w3_a100_ultra_optimizedPKfS0_S0_PfS1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z29ffn_w1w3_a100_ultra_optimizedPKfS0_S0_PfS1_iiff
     16 bytes stack frame, 12 bytes spill stores, 24 bytes spill loads
 ptxas info    : Used 64 registers, used 1 barriers, 16 bytes cumulative stack size, 408 bytes cmem[0]
-ptxas info    : Compile time = 23.645 ms
+ptxas info    : Compile time = 23.350 ms
 ptxas info    : Compiling entry function '_Z32memory_optimized_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z32memory_optimized_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 56 registers, used 1 barriers, 408 bytes cmem[0]
-ptxas info    : Compile time = 13.591 ms
+ptxas info    : Compile time = 13.158 ms
 ptxas info    : Compiling entry function '_Z24improved_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z24improved_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 64 registers, used 1 barriers, 408 bytes cmem[0]
-ptxas info    : Compile time = 17.118 ms
+ptxas info    : Compile time = 16.609 ms
 ptxas info    : Compiling entry function '_Z31fused_ffn_w1w3_optimized_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z31fused_ffn_w1w3_optimized_kernelPKfS0_S0_PfS1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 48 registers, used 1 barriers, 408 bytes cmem[0]
-ptxas info    : Compile time = 12.432 ms
+ptxas info    : Compile time = 11.869 ms
 ptxas info    : Compiling entry function '_Z29fused_ffn_w1w3_chunked_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z29fused_ffn_w1w3_chunked_kernelPKfS0_S0_PfS1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 31 registers, used 1 barriers, 408 bytes cmem[0]
-ptxas info    : Compile time = 20.235 ms
+ptxas info    : Compile time = 19.607 ms
 ptxas info    : Compiling entry function '_Z21fused_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z21fused_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 42 registers, used 1 barriers, 408 bytes cmem[0]
-ptxas info    : Compile time = 10.620 ms
+ptxas info    : Compile time = 10.499 ms
 ptxas info    : Compiling entry function '_Z28fused_output_residual_kernelPKfS0_Pfif' for 'sm_80'
 ptxas info    : Function properties for _Z28fused_output_residual_kernelPKfS0_Pfif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 41 registers, used 1 barriers, 384 bytes cmem[0]
-ptxas info    : Compile time = 6.016 ms
+ptxas info    : Compile time = 5.928 ms
 ptxas info    : Compiling entry function '_Z32multi_head_flashattention_kernelPKfS0_S0_Pfiiiiifi' for 'sm_80'
 ptxas info    : Function properties for _Z32multi_head_flashattention_kernelPKfS0_S0_Pfiiiiifi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 56 registers, used 1 barriers, 412 bytes cmem[0]
-ptxas info    : Compile time = 39.885 ms
+ptxas info    : Compile time = 37.949 ms
 ptxas info    : Compiling entry function '_Z34single_query_flashattention_kernelPKfS0_S0_Pfiiiif' for 'sm_80'
 ptxas info    : Function properties for _Z34single_query_flashattention_kernelPKfS0_S0_Pfiiiif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 56 registers, used 1 barriers, 404 bytes cmem[0]
-ptxas info    : Compile time = 39.372 ms
+ptxas info    : Compile time = 38.745 ms
 ptxas info    : Compiling entry function '_Z26qkv_kernel_multiblock_a100PKfS0_S0_S0_PfS1_S1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z26qkv_kernel_multiblock_a100PKfS0_S0_S0_PfS1_S1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 56 registers, used 1 barriers, 424 bytes cmem[0]
-ptxas info    : Compile time = 45.635 ms
+ptxas info    : Compile time = 43.619 ms
 ptxas info    : Compiling entry function '_Z28qkv_kernel_rtx2070_optimizedPKfS0_S0_S0_PfS1_S1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z28qkv_kernel_rtx2070_optimizedPKfS0_S0_S0_PfS1_S1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 40 registers, used 1 barriers, 424 bytes cmem[0]
-ptxas info    : Compile time = 30.504 ms
+ptxas info    : Compile time = 30.132 ms
 ptxas info    : Compiling entry function '_Z25qkv_kernel_a100_optimizedPKfS0_S0_S0_PfS1_S1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z25qkv_kernel_a100_optimizedPKfS0_S0_S0_PfS1_S1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 40 registers, used 1 barriers, 424 bytes cmem[0]
-ptxas info    : Compile time = 28.950 ms
+ptxas info    : Compile time = 28.431 ms
 ptxas info    : Compiling entry function '_Z16fused_qkv_kernelPKfS0_S0_S0_PfS1_S1_iiff' for 'sm_80'
 ptxas info    : Function properties for _Z16fused_qkv_kernelPKfS0_S0_S0_PfS1_S1_iiff
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 42 registers, used 1 barriers, 424 bytes cmem[0]
-ptxas info    : Compile time = 14.934 ms
+ptxas info    : Compile time = 14.856 ms
 ptxas info    : Compiling entry function '_Z11rope_kernelPfS_iiiii' for 'sm_80'
 ptxas info    : Function properties for _Z11rope_kernelPfS_iiiii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 18 registers, used 0 barriers, 388 bytes cmem[0]
-ptxas info    : Compile time = 2.574 ms
+ptxas info    : Compile time = 2.553 ms
 ptxas info    : Compiling entry function '_Z28flash_attention_kernel_fixedPfS_S_S_iiiiif' for 'sm_80'
 ptxas info    : Function properties for _Z28flash_attention_kernel_fixedPfS_S_S_iiiiif
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 54 registers, used 1 barriers, 408 bytes cmem[0]
-ptxas info    : Compile time = 19.130 ms
+ptxas info    : Compile time = 19.017 ms
 ptxas info    : Compiling entry function '_Z14softmax_kernelPfS_i' for 'sm_80'
 ptxas info    : Function properties for _Z14softmax_kernelPfS_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 15 registers, used 1 barriers, 256 bytes smem, 372 bytes cmem[0]
-ptxas info    : Compile time = 8.859 ms
+ptxas info    : Compile time = 7.977 ms
 ptxas info    : Compiling entry function '_Z23swiglu_kernel_cublas_v2PfS_S_i' for 'sm_80'
 ptxas info    : Function properties for _Z23swiglu_kernel_cublas_v2PfS_S_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 12 registers, used 0 barriers, 380 bytes cmem[0]
-ptxas info    : Compile time = 2.075 ms
+ptxas info    : Compile time = 0.964 ms
 ptxas info    : Compiling entry function '_Z13swiglu_kernelPfS_i' for 'sm_80'
 ptxas info    : Function properties for _Z13swiglu_kernelPfS_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 12 registers, used 0 barriers, 372 bytes cmem[0]
-ptxas info    : Compile time = 1.050 ms
+ptxas info    : Compile time = 0.911 ms
 ptxas info    : Compiling entry function '_Z14rmsnorm_kernelPfS_S_if' for 'sm_80'
 ptxas info    : Function properties for _Z14rmsnorm_kernelPfS_S_if
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 25 registers, used 1 barriers, 256 bytes smem, 384 bytes cmem[0], 8 bytes cmem[2]
-ptxas info    : Compile time = 10.593 ms
+ptxas info    : Compile time = 10.204 ms
 ptxas info    : Compiling entry function '_Z12saxpy_kernelPfPKffi' for 'sm_80'
 ptxas info    : Function properties for _Z12saxpy_kernelPfPKffi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 10 registers, used 0 barriers, 376 bytes cmem[0]
-ptxas info    : Compile time = 0.972 ms
+ptxas info    : Compile time = 0.856 ms
 ptxas info    : Compiling entry function '_Z12sgemv_kernelPfPKfS1_iiffb' for 'sm_80'
 ptxas info    : Function properties for _Z12sgemv_kernelPfPKfS1_iiffb
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 46 registers, used 1 barriers, 393 bytes cmem[0]
-ptxas info    : Compile time = 7.919 ms
+ptxas info    : Compile time = 7.784 ms
 ptxas info    : Compiling entry function '_Z29matmul_kernel_double_bufferedPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z29matmul_kernel_double_bufferedPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 32 registers, used 1 barriers, 512 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 8.859 ms
+ptxas info    : Compile time = 7.556 ms
 ptxas info    : Compiling entry function '_Z29matmul_kernel_optimized_fixedPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z29matmul_kernel_optimized_fixedPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 47 registers, used 1 barriers, 1024 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 13.842 ms
+ptxas info    : Compile time = 11.224 ms
 ptxas info    : Compiling entry function '_Z25matmul_kernel_simple_fastPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z25matmul_kernel_simple_fastPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 30 registers, used 1 barriers, 512 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 5.467 ms
+ptxas info    : Compile time = 4.936 ms
 ptxas info    : Compiling entry function '_Z26matmul_kernel_large_sharedPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z26matmul_kernel_large_sharedPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 33 registers, used 1 barriers, 256 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 7.990 ms
+ptxas info    : Compile time = 7.678 ms
 ptxas info    : Compiling entry function '_Z22matmul_kernel_2d_tiledPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z22matmul_kernel_2d_tiledPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 40 registers, used 1 barriers, 1024 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 6.510 ms
+ptxas info    : Compile time = 6.413 ms
 ptxas info    : Compiling entry function '_Z25matmul_kernel_2d_ultimatePfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z25matmul_kernel_2d_ultimatePfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 22.663 ms
+ptxas info    : Compile time = 22.213 ms
 ptxas info    : Compiling entry function '_Z31matmul_kernel_2d_warp_optimizedPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z31matmul_kernel_2d_warp_optimizedPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 36 registers, used 1 barriers, 256 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 5.654 ms
+ptxas info    : Compile time = 5.584 ms
 ptxas info    : Compiling entry function '_Z31matmul_kernel_2d_optimized_4096PfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z31matmul_kernel_2d_optimized_4096PfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 43 registers, used 1 barriers, 256 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 6.712 ms
+ptxas info    : Compile time = 6.621 ms
 ptxas info    : Compiling entry function '_Z27matmul_kernel_2d_vectorizedPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z27matmul_kernel_2d_vectorizedPfS_S_ii
     24 bytes stack frame, 28 bytes spill stores, 32 bytes spill loads
 ptxas info    : Used 64 registers, used 1 barriers, 24 bytes cumulative stack size, 128 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 22.965 ms
+ptxas info    : Compile time = 22.569 ms
 ptxas info    : Compiling entry function '_Z25matmul_kernel_2d_improvedPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z25matmul_kernel_2d_improvedPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 30 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 4.995 ms
+ptxas info    : Compile time = 4.972 ms
 ptxas info    : Compiling entry function '_Z23matmul_kernel_optimizedPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z23matmul_kernel_optimizedPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 33 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 7.718 ms
+ptxas info    : Compile time = 7.669 ms
 ptxas info    : Compiling entry function '_Z23matmul_kernel_coarsenedPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z23matmul_kernel_coarsenedPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 47 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 10.450 ms
+ptxas info    : Compile time = 10.359 ms
 ptxas info    : Compiling entry function '_Z19matmul_kernel_tiledPfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z19matmul_kernel_tiledPfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 40 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
-ptxas info    : Compile time = 6.390 ms
+ptxas info    : Compile time = 6.348 ms
 ptxas info    : Compiling entry function '_Z20matmul_kernel_simplePfS_S_ii' for 'sm_80'
 ptxas info    : Function properties for _Z20matmul_kernel_simplePfS_S_ii
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 44 registers, used 0 barriers, 384 bytes cmem[0]
-ptxas info    : Compile time = 5.198 ms
+ptxas info    : Compile time = 5.190 ms
 ptxas info    : Compiling entry function '_Z22elementwise_add_kernelPfS_i' for 'sm_80'
 ptxas info    : Function properties for _Z22elementwise_add_kernelPfS_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
-ptxas info    : Compile time = 0.860 ms
+ptxas info    : Compile time = 0.925 ms
 
-✅ Executable created: /app/llama2_cublas
-📋 Executable info: /app/llama2_cublas: ELF 64-bit LSB pie executable, x86-64, version 1 (GNU/Linux), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=8412a471898d09874cd4b4f433caf6be302ecdd8, for GNU/Linux 3.2.0, not stripped
+✅ Executable created: /app/llama2_flash
+📋 Executable info: /app/llama2_flash: ELF 64-bit LSB pie executable, x86-64, version 1 (GNU/Linux), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=191115ca221b3aa92363efcf721d70ab6c337505, for GNU/Linux 3.2.0, not stripped
 📚 Library dependencies:
-   linux-vdso.so.1 (0x00002a6e16a8d000)
-   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002a6e16c00000)
-   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002a6e17000000)
-   libstdc++.so.6 => /usr/lib/x86_64-linux-gnu/libstdc++.so.6 (0x00002a6e1e200000)
-   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002a6e16eb4000)
-   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002a6e16b24000)
-   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002a6e1e600000)
-   /lib64/ld-linux-x86-64.so.2 (0x000055b785134000)
-   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002a6e16b46000)
-   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002a6e16b4b000)
-   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002a6e16b50000)
-   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002a6e1ea00000)
+   linux-vdso.so.1 (0x00002b25c6c20000)
+   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002b25c6e00000)
+   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002b25c7200000)
+   libstdc++.so.6 => /usr/lib/x86_64-linux-gnu/libstdc++.so.6 (0x00002b25ce400000)
+   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002b25c6cb6000)
+   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002b25c6d9d000)
+   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002b25ce800000)
+   /lib64/ld-linux-x86-64.so.2 (0x000055d4eb5c2000)
+   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002b25c6dbf000)
+   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002b25c6dc4000)
+   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002b25c6dc9000)
+   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002b25cec00000)
 
 🚀 Running CUDA Llama2 inference...
 🤖 Model: llama2_7b.bin
 📝 Prompt: 'Once upon a time'
 ⚙️  Steps: 256, Temperature: 1.0, Top-p: 0.9, Seed: 42
-📈 Profiling enabled: trigger_pos=10, csv=/cache/profiling_cublas.csv
+📈 Profiling enabled: trigger_pos=10, csv=/cache/profiling_flash.csv
 📏 Actual model size being executed: 27.0 GB
 ⚠️  Large model detected - monitoring for potential issues...
 💾 GPU memory should be sufficient for A100 (40GB+ available)
-🔧 Run command: ./llama2_cublas llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 42 -P 10 -R /cache/profiling_cublas.csv
+🔧 Run command: ./llama2_flash llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 42 -P 10 -R /cache/profiling_flash.csv
 
 🔬 Pre-execution environment check:
    CUDA_VISIBLE_DEVICES: Not set
    LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
    PATH: /usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin...
-   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-a169ac91-79c5-24bf-b768-9930b0456e85)
+   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-4c557fd9-32a5-78c7-52be-7fe11d5b53a9)
 
 🔄 Execution Strategy #1: Standard execution with 96KB shared memory
    Environment: {'CUDA_DEVICE_MAX_CONNECTIONS': '32'}
-   Command: ./llama2_cublas llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 42 -P 10 -R /cache/profiling_cublas.csv
+   Command: ./llama2_flash llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 42 -P 10 -R /cache/profiling_flash.csv
    Timeout: 300s
 
 ============================================================
 🤖 LLAMA2 CUDA OUTPUT (llama2_7b.bin) - Strategy 1:
 ============================================================
 Initializing CUDA...
-STDERR: Achieved tok/s: 31.37
+STDERR: Achieved tok/s: 10.55
 CUDA Status: no error
 Device Count: 1
 Found 1 CUDA device(s)
@@ -592,11 +604,13 @@ Generation parameters:
   Top-p: 0.90
   Steps: 256
   Random seed: 42
+  Profiling: enabled (trigger pos=10, csv=/cache/profiling_flash.csv)
 Flash Attention: ULTRA-OPTIMIZED GPU ACCELERATION
 
 Using FUSED TRANSFORMER kernels for maximum performance!
 === FUSED OPTIMIZED GPU GENERATION ===
 Using Flash Attention with CUDA acceleration
+Strict isolation: cuBLAS disabled in flash forward path
 Steps: 256
 Prompt: "Once upon a time"
 =====================================
@@ -875,24 +889,24 @@ Compute Capability: 8.0
 SMs: 108, Shared Memory: 48 KB
 Once upon a time, this grand gemstone car
 === MODEL BOTTLENECK ANALYSIS (Layer 0, pos=10) ===
-1. RMSNorm (attention):        0.011 ms
-2. QKV Projections:            0.175 ms
-3. RoPE + KV Cache:            0.016 ms
-4. FlashAttention:             0.029 ms
-5. Output Proj + Residual:     0.248 ms
-6. RMSNorm (FFN):              0.008 ms
-7. FFN W1+W3 :                 0.282 ms
-8. SwiGLU + W2 :               0.144 ms
+1. RMSNorm (attention):        0.012 ms
+2. QKV Projections:            0.731 ms
+3. RoPE + KV Cache:            0.015 ms
+4. FlashAttention:             0.028 ms
+5. Output Proj + Residual:     0.249 ms
+6. RMSNorm (FFN):              0.009 ms
+7. FFN W1+W3 :                 1.157 ms
+8. SwiGLU + W2 :               0.658 ms
 
-TOTAL LAYER TIME: 0.913 ms
-ESTIMATED 32-LAYER TIME: 29.2 ms = 34.2 tok/s
-Profiling metrics appended to /cache/profiling_cublas.csv
+TOTAL LAYER TIME: 2.860 ms
+ESTIMATED 32-LAYER TIME: 91.5 ms = 10.9 tok/s
+Profiling metrics appended to /cache/profiling_flash.csv
 ved its way to the center of the earth, through the death of the Ancient One. It took hundreds of millions of years for a shimmering red fire to begin the molting of granite and the igniting of diamonds deep below the surface of the earth.
 As evolution was taking place, the tiny ruby-like seed began its transformation into a magnificent gemstone. The passing of millions of years had etched its path and history into its forever scarred and rough surface. Yet even now, with its blemished heart, its heart was still alive and beautiful and filled with the deepest of loves. And its rough edges softened the more time passed.
 The centuries went by and humans became enamored with this rare and spectacular stone. The king was enchanted by the beauty of the garnet, and wanted to have it with him always. He hid it inside his breastplate of armor. The love the king had for his ruby was never-ending and the gems never-fading love in return.
 But the story doesn’t end here.
 There is an ancient legend of a young man who was so taken with the stone’
-Achieved tok/s: 31.37
+Achieved tok/s: 10.55
 
 Cleaning up...
 Done.
