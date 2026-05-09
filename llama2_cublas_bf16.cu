@@ -1,22 +1,29 @@
-/* run_fp16.cu — CUDA/cuBLAS mixed-precision Llama-2 inference
+/* run_bf16.cu — CUDA/cuBLAS mixed-precision Llama-2 inference
  *
- * Weights:     __half (FP16) on GPU  →  halves VRAM vs FP32
+ * Weights:     __nv_bfloat16 (BF16) on GPU  →  halves VRAM vs FP32
  * Arithmetic:  CUBLAS_COMPUTE_32F   →  FP32 accumulation (no quality loss)
  * Activations: float  (FP32) on GPU
  *
+ * BF16 vs FP16: same 16-bit storage size, but BF16 has the same exponent
+ * range as FP32 (8 bits vs 5 bits for FP16), which avoids activation
+ * overflow/underflow common with FP16 in LLM inference.  This makes BF16
+ * numerically closer to FP32 for transformer weights.
+ *
  * The standard FP32 .bin checkpoint is loaded, weight tensors are
- * converted to FP16 on the CPU, then uploaded to the GPU as __half.
+ * converted to BF16 on the CPU, then uploaded to the GPU as __nv_bfloat16.
  *
  * Optional --verify flag:
- *   Runs a CPU FP16 forward pass alongside the GPU pass every token and
+ *   Runs a CPU BF16 forward pass alongside the GPU pass every token and
  *   prints the max absolute logit difference, flagging large divergences.
  *
  * Build (Windows):
- *   nvcc llama2_cublas_fp16.cu win.c -o llama2_cublas_fp16 -lcublas -lm -O2
+ *   nvcc llama2_cublas_bf16.cu win.c -o llama2_cublas_bf16 -lcublas -lm -O2
  * Build (WSL/Linux):
- *   nvcc llama2_cublas_fp16.cu -o llama2_cublas_fp16 -lcublas -lm -O2
+ *   nvcc llama2_cublas_bf16.cu -o llama2_cublas_bf16 -lcublas -lm -O2
  * Usage (same CLI as run.c):
- *   ./llama2_cublas_fp16 model.bin -n 256 -i "Once upon a time" [--verify]
+ *   ./llama2_cublas_bf16 model.bin -n 256 -i "Once upon a time" [--verify]
+ *
+ * Requires CUDA 11.0+ and an SM80+ GPU (A100) for BF16 Tensor Core support.
  */
 
 #include <stdio.h>
@@ -36,7 +43,7 @@
 #endif
 
 #include <cuda_runtime.h>
-#include <cuda_fp16.h>
+#include <cuda_bf16.h>      /* __nv_bfloat16, __float2bfloat16_rn, __bfloat162float */
 #include <cublas_v2.h>
 
 // ----------------------------------------------------------------------------
@@ -65,7 +72,7 @@ static cublasHandle_t cublas_handle;
 static bool g_enable_profile    = false;
 static bool g_profile_triggered = false;
 static int  g_profile_pos       = 10;
-static char g_profile_csv_path[512] = "cublas_fp16_profile_metrics.csv";
+static char g_profile_csv_path[512] = "cublas_bf16_profile_metrics.csv";
 
 static void append_profile_metrics_csv(
     int token, int pos, int dim, int hidden_dim, int n_heads, int n_kv_heads,
@@ -129,22 +136,22 @@ typedef struct {
     int    shared_weights; /* 1 if wcls == token_embedding_table */
 } CPUWeightsFP32;
 
-/* GPU-side: FP16 weight tensors */
+/* GPU-side: BF16 weight tensors */
 typedef struct {
-    __half* d_token_embedding_table; /* kept FP16; embedding lookup converts row */
-    __half* d_rms_att_weight;
-    __half* d_rms_ffn_weight;
-    __half* d_wq;
-    __half* d_wk;
-    __half* d_wv;
-    __half* d_wo;
-    __half* d_w1;
-    __half* d_w2;
-    __half* d_w3;
-    __half* d_rms_final_weight;
-    __half* d_wcls;               /* may be same allocation as d_token_embedding_table */
+    __nv_bfloat16* d_token_embedding_table; /* kept BF16; embedding lookup converts row */
+    __nv_bfloat16* d_rms_att_weight;
+    __nv_bfloat16* d_rms_ffn_weight;
+    __nv_bfloat16* d_wq;
+    __nv_bfloat16* d_wk;
+    __nv_bfloat16* d_wv;
+    __nv_bfloat16* d_wo;
+    __nv_bfloat16* d_w1;
+    __nv_bfloat16* d_w2;
+    __nv_bfloat16* d_w3;
+    __nv_bfloat16* d_rms_final_weight;
+    __nv_bfloat16* d_wcls;               /* may be same allocation as d_token_embedding_table */
     int     shared_weights;
-} GPUWeightsFP16;
+} GPUWeightsBF16;
 
 /* All activation buffers on GPU are FP32 */
 typedef struct {
@@ -166,7 +173,7 @@ typedef struct {
 typedef struct {
     Config         config;
     CPUWeightsFP32 cpu_w;
-    GPUWeightsFP16 gpu_w;
+    GPUWeightsBF16 gpu_w;
     RunState       state;
     int            fd;
     float*         data;     /* mmap base */
@@ -177,21 +184,21 @@ typedef struct {
 // CPU forward pass state (used only when --verify is active)
 
 typedef struct {
-    /* __half on CPU (cuda_fp16.h defines __half for host code too) */
-    __half* token_embedding_table;
-    __half* rms_att_weight;
-    __half* rms_ffn_weight;
-    __half* wq;
-    __half* wk;
-    __half* wv;
-    __half* wo;
-    __half* w1;
-    __half* w2;
-    __half* w3;
-    __half* rms_final_weight;
-    __half* wcls;
-    int     shared_weights;
-} CPUWeightsFP16;
+    /* __nv_bfloat16 on CPU (cuda_bf16.h defines it for host code too) */
+    __nv_bfloat16* token_embedding_table;
+    __nv_bfloat16* rms_att_weight;
+    __nv_bfloat16* rms_ffn_weight;
+    __nv_bfloat16* wq;
+    __nv_bfloat16* wk;
+    __nv_bfloat16* wv;
+    __nv_bfloat16* wo;
+    __nv_bfloat16* w1;
+    __nv_bfloat16* w2;
+    __nv_bfloat16* w3;
+    __nv_bfloat16* rms_final_weight;
+    __nv_bfloat16* wcls;
+    int            shared_weights;
+} CPUWeightsBF16;
 
 typedef struct {
     float* x;
@@ -211,10 +218,10 @@ typedef struct {
 // ----------------------------------------------------------------------------
 // GPU kernels
 
-/* FP16 RMSNorm: read FP16 weight, compute in FP32 */
-__global__ void rmsnorm_fp16_kernel(float* __restrict__ out,
+/* BF16 RMSNorm: read BF16 weight, compute in FP32 */
+__global__ void rmsnorm_bf16_kernel(float* __restrict__ out,
                                      const float* __restrict__ x,
-                                     const __half* __restrict__ w,
+                                     const __nv_bfloat16* __restrict__ w,
                                      int size, float eps)
 {
     __shared__ float smem;
@@ -233,23 +240,23 @@ __global__ void rmsnorm_fp16_kernel(float* __restrict__ out,
     __syncthreads();
     float inv = smem;
     for (int i = threadIdx.x; i < size; i += blockDim.x)
-        out[i] = __half2float(w[i]) * (inv * x[i]);
+        out[i] = __bfloat162float(w[i]) * (inv * x[i]);
 }
 
-static void cuda_rmsnorm_fp16(float* d_out, const float* d_x,
-                               const __half* d_w, int size)
+static void cuda_rmsnorm_bf16(float* d_out, const float* d_x,
+                               const __nv_bfloat16* d_w, int size)
 {
     int block = (size < 1024) ? 256 : 512;
-    rmsnorm_fp16_kernel<<<1, block>>>(d_out, d_x, d_w, size, 1e-5f);
+    rmsnorm_bf16_kernel<<<1, block>>>(d_out, d_x, d_w, size, 1e-5f);
 }
 
-/* Copy a single FP16 embedding row to FP32 activation buffer */
-__global__ void embed_fp16_to_fp32(float* __restrict__ out,
-                                    const __half* __restrict__ emb,
+/* Copy a single BF16 embedding row to FP32 activation buffer */
+__global__ void embed_bf16_to_fp32(float* __restrict__ out,
+                                    const __nv_bfloat16* __restrict__ emb,
                                     int offset, int dim)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < dim) out[i] = __half2float(emb[offset + i]);
+    if (i < dim) out[i] = __bfloat162float(emb[offset + i]);
 }
 
 /* RoPE rotary embedding kernel (operates on FP32 Q/K) */
@@ -360,42 +367,41 @@ __global__ void flash_attention_kernel(const float* __restrict__ q,
 }
 
 // ----------------------------------------------------------------------------
-// cuBLAS FP16 matmul helper:  out[d] = W[d x n] @ x[n]  (FP32 accumulation)
+// cuBLAS BF16 matmul helper:  out[d] = W[d x n] @ x[n]  (FP32 accumulation)
 //
-// cublasGemmEx only supports (FP16, FP16) → FP32 with CUBLAS_COMPUTE_32F;
-// (FP16, FP32) → FP32 is not a valid type combination and returns
-// CUBLAS_STATUS_EXECUTION_FAILED.  We therefore convert the FP32 activation
-// vector to FP16 on-the-fly into a reusable scratch buffer.
+// cublasGemmEx with (BF16, BF16) → FP32 using CUBLAS_COMPUTE_32F is supported
+// on SM80+ (A100).  We convert the FP32 activation vector to BF16 on-the-fly
+// into a reusable scratch buffer.
 
-__global__ void fp32_to_fp16_kernel(__half* __restrict__ out,
+__global__ void fp32_to_bf16_kernel(__nv_bfloat16* __restrict__ out,
                                      const float* __restrict__ in, int n)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) out[i] = __float2half(in[i]);
+    if (i < n) out[i] = __float2bfloat16_rn(in[i]);
 }
 
-static __half*  d_x_fp16_scratch   = NULL;
-static size_t   d_x_fp16_scratch_n = 0;
+static __nv_bfloat16* d_x_bf16_scratch   = NULL;
+static size_t         d_x_bf16_scratch_n = 0;
 
-static void ensure_fp16_scratch(size_t n) {
-    if (n > d_x_fp16_scratch_n) {
-        if (d_x_fp16_scratch) cudaFree(d_x_fp16_scratch);
-        CUDA_CHECK(cudaMalloc(&d_x_fp16_scratch, n * sizeof(__half)));
-        d_x_fp16_scratch_n = n;
+static void ensure_bf16_scratch(size_t n) {
+    if (n > d_x_bf16_scratch_n) {
+        if (d_x_bf16_scratch) cudaFree(d_x_bf16_scratch);
+        CUDA_CHECK(cudaMalloc(&d_x_bf16_scratch, n * sizeof(__nv_bfloat16)));
+        d_x_bf16_scratch_n = n;
     }
 }
 
-static void cublas_sgemv_fp16(int n, int d,
-                               const __half* d_W,   /* d_W[n * d] row-major */
-                               const float*  d_x,   /* d_x[n] FP32 activations */
-                               float*        d_y)   /* d_y[d] FP32 output */
+static void cublas_sgemv_bf16(int n, int d,
+                               const __nv_bfloat16* d_W,   /* d_W[n * d] row-major */
+                               const float*         d_x,   /* d_x[n] FP32 activations */
+                               float*               d_y)   /* d_y[d] FP32 output */
 {
-    /* Convert activation vector FP32 → FP16 into scratch buffer */
-    ensure_fp16_scratch(n);
-    fp32_to_fp16_kernel<<<(n + 255) / 256, 256>>>(d_x_fp16_scratch, d_x, n);
+    /* Convert activation vector FP32 → BF16 into scratch buffer */
+    ensure_bf16_scratch(n);
+    fp32_to_bf16_kernel<<<(n + 255) / 256, 256>>>(d_x_bf16_scratch, d_x, n);
 
     const float alpha = 1.0f, beta = 0.0f;
-    /* GemmEx with (FP16, FP16) → FP32, CUBLAS_COMPUTE_32F: supported on CC 7.x+
+    /* GemmEx with (BF16, BF16) → FP32, CUBLAS_COMPUTE_32F: supported on SM80+
      * W is (d×n) row-major; cuBLAS sees it as (n×d) col-major, CUBLAS_OP_T → (d×n). ✓
      */
     CUBLAS_CHECK(cublasGemmEx(
@@ -403,10 +409,10 @@ static void cublas_sgemv_fp16(int n, int d,
         CUBLAS_OP_T, CUBLAS_OP_N,
         d, 1, n,
         &alpha,
-        d_W,              CUDA_R_16F, n,   /* A: weight matrix FP16 */
-        d_x_fp16_scratch, CUDA_R_16F, n,   /* B: activation vector FP16 */
+        d_W,              CUDA_R_16BF, n,   /* A: weight matrix BF16 */
+        d_x_bf16_scratch, CUDA_R_16BF, n,   /* B: activation vector BF16 */
         &beta,
-        d_y,              CUDA_R_32F, d,   /* C: output FP32 */
+        d_y,              CUDA_R_32F,  d,   /* C: output FP32 */
         CUBLAS_COMPUTE_32F,
         CUBLAS_GEMM_DEFAULT));
 }
@@ -414,20 +420,20 @@ static void cublas_sgemv_fp16(int n, int d,
 // ----------------------------------------------------------------------------
 // Memory management
 
-static __half* alloc_half_gpu(size_t n) {
-    __half* ptr = NULL;
-    CUDA_CHECK(cudaMalloc(&ptr, n * sizeof(__half)));
+static __nv_bfloat16* alloc_bf16_gpu(size_t n) {
+    __nv_bfloat16* ptr = NULL;
+    CUDA_CHECK(cudaMalloc(&ptr, n * sizeof(__nv_bfloat16)));
     return ptr;
 }
 
-/* Upload a FP32 CPU array as FP16 to GPU using a temporary buffer */
-static __half* upload_fp32_as_fp16(const float* src, size_t n) {
+/* Upload a FP32 CPU array as BF16 to GPU using a temporary buffer */
+static __nv_bfloat16* upload_fp32_as_bf16(const float* src, size_t n) {
     /* Convert on CPU */
-    __half* tmp = (__half*)malloc(n * sizeof(__half));
+    __nv_bfloat16* tmp = (__nv_bfloat16*)malloc(n * sizeof(__nv_bfloat16));
     if (!tmp) { fprintf(stderr, "malloc failed\n"); exit(EXIT_FAILURE); }
-    for (size_t i = 0; i < n; i++) tmp[i] = __float2half(src[i]);
-    __half* d_ptr = alloc_half_gpu(n);
-    CUDA_CHECK(cudaMemcpy(d_ptr, tmp, n * sizeof(__half), cudaMemcpyHostToDevice));
+    for (size_t i = 0; i < n; i++) tmp[i] = __float2bfloat16_rn(src[i]);
+    __nv_bfloat16* d_ptr = alloc_bf16_gpu(n);
+    CUDA_CHECK(cudaMemcpy(d_ptr, tmp, n * sizeof(__nv_bfloat16), cudaMemcpyHostToDevice));
     free(tmp);
     return d_ptr;
 }
@@ -465,29 +471,29 @@ static void map_weights_from_ptr(CPUWeightsFP32* w, Config* p, float* ptr) {
     w->wcls = ptr;
 }
 
-static void upload_weights_to_gpu(GPUWeightsFP16* gw, CPUWeightsFP32* cw, Config* p) {
+static void upload_weights_to_gpu(GPUWeightsBF16* gw, CPUWeightsFP32* cw, Config* p) {
     int head_size = p->dim / p->n_heads;
     size_t nl = p->n_layers;
-    printf("[fp16] Uploading weights to GPU as FP16...\n");
+    printf("[bf16] Uploading weights to GPU as BF16...\n");
 
-    gw->d_token_embedding_table = upload_fp32_as_fp16(cw->token_embedding_table,
+    gw->d_token_embedding_table = upload_fp32_as_bf16(cw->token_embedding_table,
                                                        (size_t)p->vocab_size * p->dim);
-    gw->d_rms_att_weight = upload_fp32_as_fp16(cw->rms_att_weight, nl * p->dim);
-    gw->d_wq = upload_fp32_as_fp16(cw->wq, nl * p->dim * (p->n_heads * head_size));
-    gw->d_wk = upload_fp32_as_fp16(cw->wk, nl * p->dim * (p->n_kv_heads * head_size));
-    gw->d_wv = upload_fp32_as_fp16(cw->wv, nl * p->dim * (p->n_kv_heads * head_size));
-    gw->d_wo = upload_fp32_as_fp16(cw->wo, nl * (p->n_heads * head_size) * p->dim);
-    gw->d_rms_ffn_weight = upload_fp32_as_fp16(cw->rms_ffn_weight, nl * p->dim);
-    gw->d_w1 = upload_fp32_as_fp16(cw->w1, nl * p->dim * p->hidden_dim);
-    gw->d_w2 = upload_fp32_as_fp16(cw->w2, nl * p->hidden_dim * p->dim);
-    gw->d_w3 = upload_fp32_as_fp16(cw->w3, nl * p->dim * p->hidden_dim);
-    gw->d_rms_final_weight = upload_fp32_as_fp16(cw->rms_final_weight, p->dim);
+    gw->d_rms_att_weight = upload_fp32_as_bf16(cw->rms_att_weight, nl * p->dim);
+    gw->d_wq = upload_fp32_as_bf16(cw->wq, nl * p->dim * (p->n_heads * head_size));
+    gw->d_wk = upload_fp32_as_bf16(cw->wk, nl * p->dim * (p->n_kv_heads * head_size));
+    gw->d_wv = upload_fp32_as_bf16(cw->wv, nl * p->dim * (p->n_kv_heads * head_size));
+    gw->d_wo = upload_fp32_as_bf16(cw->wo, nl * (p->n_heads * head_size) * p->dim);
+    gw->d_rms_ffn_weight = upload_fp32_as_bf16(cw->rms_ffn_weight, nl * p->dim);
+    gw->d_w1 = upload_fp32_as_bf16(cw->w1, nl * p->dim * p->hidden_dim);
+    gw->d_w2 = upload_fp32_as_bf16(cw->w2, nl * p->hidden_dim * p->dim);
+    gw->d_w3 = upload_fp32_as_bf16(cw->w3, nl * p->dim * p->hidden_dim);
+    gw->d_rms_final_weight = upload_fp32_as_bf16(cw->rms_final_weight, p->dim);
 
     if (cw->shared_weights) {
         gw->d_wcls = gw->d_token_embedding_table;
         gw->shared_weights = 1;
     } else {
-        gw->d_wcls = upload_fp32_as_fp16(cw->wcls, (size_t)p->vocab_size * p->dim);
+        gw->d_wcls = upload_fp32_as_bf16(cw->wcls, (size_t)p->vocab_size * p->dim);
         gw->shared_weights = 0;
     }
 
@@ -500,11 +506,11 @@ static void upload_weights_to_gpu(GPUWeightsFP16* gw, CPUWeightsFP32* cw, Config
         + nl * p->dim * p->dim
         + nl * p->dim * p->hidden_dim * 3
         + p->dim;
-    size_t fp16_mb = n_weights * 2 / (1024*1024);
-    printf("[fp16] Weights: ~%zu MB FP32 -> ~%zu MB FP16 on GPU\n", fp32_mb, fp16_mb);
+    size_t bf16_mb = n_weights * 2 / (1024*1024);
+    printf("[bf16] Weights: ~%zu MB FP32 -> ~%zu MB BF16 on GPU\n", fp32_mb, bf16_mb);
 }
 
-static void free_gpu_weights(GPUWeightsFP16* gw) {
+static void free_gpu_weights(GPUWeightsBF16* gw) {
     cudaFree(gw->d_token_embedding_table);
     cudaFree(gw->d_rms_att_weight);
     cudaFree(gw->d_rms_ffn_weight);
@@ -586,13 +592,12 @@ static void free_transformer(Transformer* t) {
 }
 
 // ----------------------------------------------------------------------------
-// Per-layer bottleneck profiler (analogous to profile_7b_bottlenecks in
-// llama2_cublas.cu, but adapted for FP16 weights / FP32 activations)
+// Per-layer bottleneck profiler (adapted for BF16 weights / FP32 activations)
 
 static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
-    Config*         p = &t->config;
-    GPUWeightsFP16* w = &t->gpu_w;
-    RunState*       s = &t->state;
+    Config*        p = &t->config;
+    GPUWeightsBF16* w = &t->gpu_w;
+    RunState*      s = &t->state;
     int dim        = p->dim;
     int kv_dim     = dim * p->n_kv_heads / p->n_heads;
     int hidden_dim = p->hidden_dim;
@@ -606,13 +611,13 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
     float stage1_ms = 0.0f, stage2_ms = 0.0f, stage3_ms = 0.0f, stage4_ms = 0.0f;
     float stage5_ms = 0.0f, stage6_ms = 0.0f, stage7_ms = 0.0f, stage8_ms = 0.0f;
 
-    printf("\n=== FP16 MODEL BOTTLENECK ANALYSIS (Layer 0, pos=%d) ===\n", pos);
+    printf("\n=== BF16 MODEL BOTTLENECK ANALYSIS (Layer 0, pos=%d) ===\n", pos);
 
     /* Prime d_x with the token embedding for layer 0 */
     {
         int threads = 256;
         int blocks  = (dim + threads - 1) / threads;
-        embed_fp16_to_fp32<<<blocks, threads>>>(
+        embed_bf16_to_fp32<<<blocks, threads>>>(
             s->d_x, w->d_token_embedding_table, token * dim, dim);
         CUDA_CHECK(cudaDeviceSynchronize());
     }
@@ -621,7 +626,7 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
 
     /* --- Stage 1: Attention RMSNorm --- */
     cudaEventRecord(ev_start);
-    cuda_rmsnorm_fp16(s->d_xb, s->d_x,
+    cuda_rmsnorm_bf16(s->d_xb, s->d_x,
                       w->d_rms_att_weight + (size_t)l * dim, dim);
     cudaEventRecord(ev_stop);
     cudaEventSynchronize(ev_stop);
@@ -629,13 +634,13 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
     printf("1. RMSNorm (attention):        %.3f ms\n", elapsed_ms);
     stage1_ms = elapsed_ms; total_ms += elapsed_ms;
 
-    /* --- Stage 2: QKV Projections (FP16 weights -> FP32 output) --- */
+    /* --- Stage 2: QKV Projections (BF16 weights -> FP32 output) --- */
     cudaEventRecord(ev_start);
-    cublas_sgemv_fp16(dim, dim,
+    cublas_sgemv_bf16(dim, dim,
                       w->d_wq + (size_t)l * dim * dim,    s->d_xb, s->d_q);
-    cublas_sgemv_fp16(dim, kv_dim,
+    cublas_sgemv_bf16(dim, kv_dim,
                       w->d_wk + (size_t)l * dim * kv_dim, s->d_xb, s->d_k);
-    cublas_sgemv_fp16(dim, kv_dim,
+    cublas_sgemv_bf16(dim, kv_dim,
                       w->d_wv + (size_t)l * dim * kv_dim, s->d_xb, s->d_v);
     cudaEventRecord(ev_stop);
     cudaEventSynchronize(ev_stop);
@@ -690,7 +695,7 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
 
     /* --- Stage 5: Output Projection + Residual --- */
     cudaEventRecord(ev_start);
-    cublas_sgemv_fp16(dim, dim,
+    cublas_sgemv_bf16(dim, dim,
                       w->d_wo + (size_t)l * dim * dim, s->d_xb, s->d_xb2);
     { int b = (dim + 255) / 256; add_kernel<<<b, 256>>>(s->d_x, s->d_xb2, dim); }
     cudaEventRecord(ev_stop);
@@ -701,7 +706,7 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
 
     /* --- Stage 6: FFN RMSNorm --- */
     cudaEventRecord(ev_start);
-    cuda_rmsnorm_fp16(s->d_xb, s->d_x,
+    cuda_rmsnorm_bf16(s->d_xb, s->d_x,
                       w->d_rms_ffn_weight + (size_t)l * dim, dim);
     cudaEventRecord(ev_stop);
     cudaEventSynchronize(ev_stop);
@@ -711,9 +716,9 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
 
     /* --- Stage 7: FFN W1 + W3 --- */
     cudaEventRecord(ev_start);
-    cublas_sgemv_fp16(dim, hidden_dim,
+    cublas_sgemv_bf16(dim, hidden_dim,
                       w->d_w1 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb);
-    cublas_sgemv_fp16(dim, hidden_dim,
+    cublas_sgemv_bf16(dim, hidden_dim,
                       w->d_w3 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb2);
     cudaEventRecord(ev_stop);
     cudaEventSynchronize(ev_stop);
@@ -725,7 +730,7 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
     cudaEventRecord(ev_start);
     { int b = (hidden_dim + 255) / 256;
       swiglu_kernel<<<b, 256>>>(s->d_hb, s->d_hb2, hidden_dim); }
-    cublas_sgemv_fp16(hidden_dim, dim,
+    cublas_sgemv_bf16(hidden_dim, dim,
                       w->d_w2 + (size_t)l * hidden_dim * dim, s->d_hb, s->d_xb);
     { int b = (dim + 255) / 256; add_kernel<<<b, 256>>>(s->d_x, s->d_xb, dim); }
     cudaEventRecord(ev_stop);
@@ -752,11 +757,11 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
 }
 
 // ----------------------------------------------------------------------------
-// GPU forward pass (FP16 weights, FP32 activations)
+// GPU forward pass (BF16 weights, FP32 activations)
 
 static float* forward_gpu(Transformer* t, int token, int pos) {
     Config* p  = &t->config;
-    GPUWeightsFP16* w = &t->gpu_w;
+    GPUWeightsBF16* w = &t->gpu_w;
     RunState* s = &t->state;
 
     int dim        = p->dim;
@@ -769,22 +774,22 @@ static float* forward_gpu(Transformer* t, int token, int pos) {
     if (g_enable_profile && pos == g_profile_pos && !g_profile_triggered)
         profile_7b_bottlenecks(t, token, pos);
 
-    /* 1. Token embedding: copy FP16 row to FP32 d_x */
+    /* 1. Token embedding: copy BF16 row to FP32 d_x */
     {
         int threads = 256;
         int blocks  = (dim + threads - 1) / threads;
-        embed_fp16_to_fp32<<<blocks, threads>>>(
+        embed_bf16_to_fp32<<<blocks, threads>>>(
             s->d_x, w->d_token_embedding_table, token * dim, dim);
     }
 
     for (int l = 0; l < p->n_layers; l++) {
         /* 2. Attention RMSNorm */
-        cuda_rmsnorm_fp16(s->d_xb, s->d_x, w->d_rms_att_weight + (size_t)l * dim, dim);
+        cuda_rmsnorm_bf16(s->d_xb, s->d_x, w->d_rms_att_weight + (size_t)l * dim, dim);
 
         /* 3. QKV projections */
-        cublas_sgemv_fp16(dim, dim,  w->d_wq + (size_t)l * dim * dim,               s->d_xb, s->d_q);
-        cublas_sgemv_fp16(dim, kv_dim, w->d_wk + (size_t)l * dim * kv_dim,          s->d_xb, s->d_k);
-        cublas_sgemv_fp16(dim, kv_dim, w->d_wv + (size_t)l * dim * kv_dim,          s->d_xb, s->d_v);
+        cublas_sgemv_bf16(dim, dim,    w->d_wq + (size_t)l * dim * dim,               s->d_xb, s->d_q);
+        cublas_sgemv_bf16(dim, kv_dim, w->d_wk + (size_t)l * dim * kv_dim,            s->d_xb, s->d_k);
+        cublas_sgemv_bf16(dim, kv_dim, w->d_wv + (size_t)l * dim * kv_dim,            s->d_xb, s->d_v);
 
         /* 4. RoPE */
         {
@@ -820,29 +825,29 @@ static float* forward_gpu(Transformer* t, int token, int pos) {
         }
 
         /* 7. Output projection + residual */
-        cublas_sgemv_fp16(dim, dim, w->d_wo + (size_t)l * dim * dim, s->d_xb, s->d_xb2);
+        cublas_sgemv_bf16(dim, dim, w->d_wo + (size_t)l * dim * dim, s->d_xb, s->d_xb2);
         { int b = (dim+255)/256; add_kernel<<<b,256>>>(s->d_x, s->d_xb2, dim); }
 
         /* 8. FFN RMSNorm */
-        cuda_rmsnorm_fp16(s->d_xb, s->d_x, w->d_rms_ffn_weight + (size_t)l * dim, dim);
+        cuda_rmsnorm_bf16(s->d_xb, s->d_x, w->d_rms_ffn_weight + (size_t)l * dim, dim);
 
         /* 9. FFN W1, W3 */
-        cublas_sgemv_fp16(dim, hidden_dim, w->d_w1 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb);
-        cublas_sgemv_fp16(dim, hidden_dim, w->d_w3 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb2);
+        cublas_sgemv_bf16(dim, hidden_dim, w->d_w1 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb);
+        cublas_sgemv_bf16(dim, hidden_dim, w->d_w3 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb2);
 
         /* 10. SwiGLU */
         { int b = (hidden_dim+255)/256; swiglu_kernel<<<b,256>>>(s->d_hb, s->d_hb2, hidden_dim); }
 
         /* 11. FFN W2 + residual */
-        cublas_sgemv_fp16(hidden_dim, dim, w->d_w2 + (size_t)l * hidden_dim * dim, s->d_hb, s->d_xb);
+        cublas_sgemv_bf16(hidden_dim, dim, w->d_w2 + (size_t)l * hidden_dim * dim, s->d_hb, s->d_xb);
         { int b = (dim+255)/256; add_kernel<<<b,256>>>(s->d_x, s->d_xb, dim); }
     }
 
     /* 12. Final RMSNorm */
-    cuda_rmsnorm_fp16(s->d_x, s->d_x, w->d_rms_final_weight, dim);
+    cuda_rmsnorm_bf16(s->d_x, s->d_x, w->d_rms_final_weight, dim);
 
     /* 13. Classifier */
-    cublas_sgemv_fp16(dim, p->vocab_size, w->d_wcls, s->d_x, s->d_logits);
+    cublas_sgemv_bf16(dim, p->vocab_size, w->d_wcls, s->d_x, s->d_logits);
 
     CUDA_CHECK(cudaMemcpy(s->h_logits, s->d_logits,
                           p->vocab_size * sizeof(float), cudaMemcpyDeviceToHost));
@@ -850,19 +855,19 @@ static float* forward_gpu(Transformer* t, int token, int pos) {
 }
 
 // ----------------------------------------------------------------------------
-// CPU FP16 forward pass (--verify mode only)
+// CPU BF16 forward pass (--verify mode only)
 
-static float cpu_fp16_to_float(__half v) { return __half2float(v); }
+static float cpu_bf16_to_float(__nv_bfloat16 v) { return __bfloat162float(v); }
 
-/* Allocate a CPU FP16 copy of all weights (for verify mode) */
-static void build_cpu_fp16_weights(CPUWeightsFP16* cw, CPUWeightsFP32* src, Config* p) {
+/* Allocate a CPU BF16 copy of all weights (for verify mode) */
+static void build_cpu_bf16_weights(CPUWeightsBF16* cw, CPUWeightsFP32* src, Config* p) {
     int head_size = p->dim / p->n_heads;
     size_t nl = p->n_layers;
 
-    auto cvt = [](const float* from, size_t n) -> __half* {
-        __half* buf = (__half*)malloc(n * sizeof(__half));
+    auto cvt = [](const float* from, size_t n) -> __nv_bfloat16* {
+        __nv_bfloat16* buf = (__nv_bfloat16*)malloc(n * sizeof(__nv_bfloat16));
         if (!buf) { fprintf(stderr, "malloc failed\n"); exit(EXIT_FAILURE); }
-        for (size_t i = 0; i < n; i++) buf[i] = __float2half(from[i]);
+        for (size_t i = 0; i < n; i++) buf[i] = __float2bfloat16_rn(from[i]);
         return buf;
     };
 
@@ -900,24 +905,24 @@ static void malloc_cpu_run_state(CPURunState* s, Config* p) {
     s->value_cache = (float*)calloc((size_t)p->n_layers * p->seq_len * kv_dim, sizeof(float));
 }
 
-static void cpu_rmsnorm_fp16(float* o, const float* x, const __half* w, int size) {
+static void cpu_rmsnorm_bf16(float* o, const float* x, const __nv_bfloat16* w, int size) {
     float ss = 0.0f;
     for (int j = 0; j < size; j++) ss += x[j] * x[j];
     ss = ss / size + 1e-5f;
     ss = 1.0f / sqrtf(ss);
     for (int j = 0; j < size; j++)
-        o[j] = cpu_fp16_to_float(w[j]) * (ss * x[j]);
+        o[j] = cpu_bf16_to_float(w[j]) * (ss * x[j]);
 }
 
-static void cpu_matmul_fp16(float* xout, const float* x, const __half* w, int n, int d) {
+static void cpu_matmul_bf16(float* xout, const float* x, const __nv_bfloat16* w, int n, int d) {
     for (int i = 0; i < d; i++) {
         float val = 0.0f;
-        for (int j = 0; j < n; j++) val += cpu_fp16_to_float(w[i*n+j]) * x[j];
+        for (int j = 0; j < n; j++) val += cpu_bf16_to_float(w[i*n+j]) * x[j];
         xout[i] = val;
     }
 }
 
-static float* forward_cpu_fp16(CPUWeightsFP16* w, CPURunState* s, Config* p,
+static float* forward_cpu_bf16(CPUWeightsBF16* w, CPURunState* s, Config* p,
                                 int token, int pos) {
     int dim        = p->dim;
     int kv_dim     = dim * p->n_kv_heads / p->n_heads;
@@ -926,15 +931,15 @@ static float* forward_cpu_fp16(CPUWeightsFP16* w, CPURunState* s, Config* p,
     float* x = s->x;
 
     /* embedding */
-    const __half* row = w->token_embedding_table + (size_t)token * dim;
-    for (int i = 0; i < dim; i++) x[i] = cpu_fp16_to_float(row[i]);
+    const __nv_bfloat16* row = w->token_embedding_table + (size_t)token * dim;
+    for (int i = 0; i < dim; i++) x[i] = cpu_bf16_to_float(row[i]);
 
     for (int l = 0; l < p->n_layers; l++) {
-        cpu_rmsnorm_fp16(s->xb, x, w->rms_att_weight + (size_t)l*dim, dim);
+        cpu_rmsnorm_bf16(s->xb, x, w->rms_att_weight + (size_t)l*dim, dim);
 
-        cpu_matmul_fp16(s->q, s->xb, w->wq + (size_t)l*dim*dim, dim, dim);
-        cpu_matmul_fp16(s->k, s->xb, w->wk + (size_t)l*dim*kv_dim, dim, kv_dim);
-        cpu_matmul_fp16(s->v, s->xb, w->wv + (size_t)l*dim*kv_dim, dim, kv_dim);
+        cpu_matmul_bf16(s->q, s->xb, w->wq + (size_t)l*dim*dim, dim, dim);
+        cpu_matmul_bf16(s->k, s->xb, w->wk + (size_t)l*dim*kv_dim, dim, kv_dim);
+        cpu_matmul_bf16(s->v, s->xb, w->wv + (size_t)l*dim*kv_dim, dim, kv_dim);
 
         /* RoPE */
         for (int h = 0; h < p->n_heads; h++) {
@@ -990,23 +995,23 @@ static float* forward_cpu_fp16(CPUWeightsFP16* w, CPURunState* s, Config* p,
             }
         }
 
-        cpu_matmul_fp16(s->xb2, s->xb, w->wo + (size_t)l*dim*dim, dim, dim);
+        cpu_matmul_bf16(s->xb2, s->xb, w->wo + (size_t)l*dim*dim, dim, dim);
         for (int i = 0; i < dim; i++) x[i] += s->xb2[i];
 
-        cpu_rmsnorm_fp16(s->xb, x, w->rms_ffn_weight + (size_t)l*dim, dim);
-        cpu_matmul_fp16(s->hb,  s->xb, w->w1 + (size_t)l*dim*hidden_dim, dim, hidden_dim);
-        cpu_matmul_fp16(s->hb2, s->xb, w->w3 + (size_t)l*dim*hidden_dim, dim, hidden_dim);
+        cpu_rmsnorm_bf16(s->xb, x, w->rms_ffn_weight + (size_t)l*dim, dim);
+        cpu_matmul_bf16(s->hb,  s->xb, w->w1 + (size_t)l*dim*hidden_dim, dim, hidden_dim);
+        cpu_matmul_bf16(s->hb2, s->xb, w->w3 + (size_t)l*dim*hidden_dim, dim, hidden_dim);
         for (int i = 0; i < hidden_dim; i++) {
             float v = s->hb[i];
             v = v / (1.0f + expf(-v));
             s->hb[i] = v * s->hb2[i];
         }
-        cpu_matmul_fp16(s->xb, s->hb, w->w2 + (size_t)l*hidden_dim*dim, hidden_dim, dim);
+        cpu_matmul_bf16(s->xb, s->hb, w->w2 + (size_t)l*hidden_dim*dim, hidden_dim, dim);
         for (int i = 0; i < dim; i++) x[i] += s->xb[i];
     }
 
-    cpu_rmsnorm_fp16(x, x, w->rms_final_weight, dim);
-    cpu_matmul_fp16(s->logits, x, w->wcls, dim, p->vocab_size);
+    cpu_rmsnorm_bf16(x, x, w->rms_final_weight, dim);
+    cpu_matmul_bf16(s->logits, x, w->wcls, dim, p->vocab_size);
     return s->logits;
 }
 
@@ -1209,7 +1214,7 @@ static long long time_in_ms(void) {
 
 static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
                      const char* prompt, int steps,
-                     bool do_verify, CPUWeightsFP16* cpu_w, CPURunState* cpu_s)
+                     bool do_verify, CPUWeightsBF16* cpu_w, CPURunState* cpu_s)
 {
     Config* p = &t->config;
 
@@ -1230,7 +1235,7 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
 
         if (do_verify) {
             memcpy(gpu_logits_copy, gpu_logits, p->vocab_size * sizeof(float));
-            float* cpu_logits = forward_cpu_fp16(cpu_w, cpu_s, p, token, pos);
+            float* cpu_logits = forward_cpu_bf16(cpu_w, cpu_s, p, token, pos);
             float max_diff = 0.0f, mean_diff = 0.0f;
             for (int i = 0; i < p->vocab_size; i++) {
                 float d = fabsf(cpu_logits[i] - gpu_logits_copy[i]);
@@ -1275,7 +1280,7 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
 // Main
 
 static void error_usage(void) {
-    fprintf(stderr, "Usage: run_fp16_cuda <checkpoint.bin> [options]\n");
+    fprintf(stderr, "Usage: llama2_cublas_bf16 <checkpoint.bin> [options]\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -t <float>   temperature (default 1.0)\n");
     fprintf(stderr, "  -p <float>   top-p (default 0.9)\n");
@@ -1284,8 +1289,8 @@ static void error_usage(void) {
     fprintf(stderr, "  -i <string>  prompt\n");
     fprintf(stderr, "  -z <string>  tokenizer path (default: tokenizer.bin)\n");
     fprintf(stderr, "  -P <int>     profile layer-0 bottlenecks at this token pos (default: off)\n");
-    fprintf(stderr, "  -R <string>  profiling CSV output path (default: cublas_fp16_profile_metrics.csv)\n");
-    fprintf(stderr, "  --verify     compare GPU logits with CPU FP16 each token\n");
+    fprintf(stderr, "  -R <string>  profiling CSV output path (default: cublas_bf16_profile_metrics.csv)\n");
+    fprintf(stderr, "  --verify     compare GPU logits with CPU BF16 each token\n");
     exit(EXIT_FAILURE);
 }
 
@@ -1339,6 +1344,11 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "GPU: %s (CC %d.%d, %.1f GB)\n", prop.name,
                 prop.major, prop.minor,
                 prop.totalGlobalMem / (1024.0*1024.0*1024.0));
+        if (prop.major < 8) {
+            fprintf(stderr, "WARNING: BF16 Tensor Core support requires SM80+ (A100).\n"
+                            "         This GPU (SM%d%d) will use BF16 in software.\n",
+                    prop.major, prop.minor);
+        }
     }
     CUBLAS_CHECK(cublasCreate(&cublas_handle));
     CUBLAS_CHECK(cublasSetMathMode(cublas_handle, CUBLAS_TENSOR_OP_MATH));
@@ -1356,12 +1366,12 @@ int main(int argc, char* argv[]) {
     Sampler sampler;
     build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
 
-    /* Optionally build CPU FP16 state for verification */
-    CPUWeightsFP16 cpu_w;
+    /* Optionally build CPU BF16 state for verification */
+    CPUWeightsBF16 cpu_w;
     CPURunState    cpu_s;
     if (do_verify) {
-        fprintf(stderr, "[verify] Building CPU FP16 weight copy...\n");
-        build_cpu_fp16_weights(&cpu_w, &transformer.cpu_w, &transformer.config);
+        fprintf(stderr, "[verify] Building CPU BF16 weight copy...\n");
+        build_cpu_bf16_weights(&cpu_w, &transformer.cpu_w, &transformer.config);
         malloc_cpu_run_state(&cpu_s, &transformer.config);
         fprintf(stderr, "[verify] Ready. Will print logit diffs per token.\n");
     }
@@ -1375,7 +1385,7 @@ int main(int argc, char* argv[]) {
 
     /* Cleanup */
     if (do_verify) {
-        /* free CPU FP16 weights */
+        /* free CPU BF16 weights */
         free(cpu_w.token_embedding_table);
         free(cpu_w.rms_att_weight); free(cpu_w.rms_ffn_weight);
         free(cpu_w.wq); free(cpu_w.wk); free(cpu_w.wv); free(cpu_w.wo);
@@ -1392,7 +1402,7 @@ int main(int argc, char* argv[]) {
     free_sampler(&sampler);
     free_tokenizer(&tokenizer);
     free_transformer(&transformer);
-    if (d_x_fp16_scratch) cudaFree(d_x_fp16_scratch);
+    if (d_x_bf16_scratch) cudaFree(d_x_bf16_scratch);
     cublasDestroy(cublas_handle);
     return 0;
 }

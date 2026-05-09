@@ -143,6 +143,14 @@ CUDA_SOURCE_VARIANTS = {
         "source_file": "llama2_cublas_fp16.cu",
         "binary_name": "llama2_cublas_fp16",
     },
+    "cublas_bf16": {
+        "source_file": "llama2_cublas_bf16.cu",
+        "binary_name": "llama2_cublas_bf16",
+    },
+    "cublas_fp16tc": {
+        "source_file": "llama2_cublas_fp16tc.cu",
+        "binary_name": "llama2_cublas_fp16tc",
+    },
 }
 
 def get_model_config(model_name):
@@ -923,6 +931,11 @@ def _compile_and_run_cuda_impl(
     log_and_capture(f"⚙️  Steps: {steps}, Temperature: {temperature}, Top-p: {topp}, Seed: {seed}")
     if profile_enable:
         log_and_capture(f"📈 Profiling enabled: trigger_pos={profile_pos}, csv={profile_csv}")
+        # Ensure the CSV directory exists inside the container before the binary runs.
+        csv_dir = os.path.dirname(profile_csv)
+        if csv_dir:
+            os.makedirs(csv_dir, exist_ok=True)
+            log_and_capture(f"📁 Created CSV directory: {csv_dir}")
     
     # Add model size information for debugging large model issues
     model_size_gb = os.path.getsize(model) / 1e9
@@ -1637,7 +1650,7 @@ def main(
         output_file = f"profiling_runs/{cuda_impl_key}/profiling_{cuda_impl_key}_{timestamp}.txt"
 
     if profile_enable and not user_overrode_profile_csv:
-        profile_csv = f"/cache/profiling_{cuda_impl_key}.csv"
+        profile_csv = f"/cache/profiling_runs/{cuda_impl_key}/profiling_{cuda_impl_key}.csv"
 
     if profile_enable:
         print(f"   trigger position: {profile_pos}")

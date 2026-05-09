@@ -1,22 +1,38 @@
-/* run_fp16.cu — CUDA/cuBLAS mixed-precision Llama-2 inference
+/* llama2_cublas_fp16tc.cu — FP16 Tensor Core (full FP16 compute) Llama-2 inference
+ *
+ * Precision ablation variant of llama2_cublas_fp16.cu:
+ *
+ *   cublas_fp16   (baseline): CUBLAS_COMPUTE_32F — weights FP16, accumulate FP32 (safe)
+ *   cublas_fp16tc (this file): CUBLAS_COMPUTE_16F — weights FP16, accumulate FP16 (fast, lossy)
+ *
+ * The single change is in cublasGemmEx:
+ *   - CUBLAS_COMPUTE_32F  →  CUBLAS_COMPUTE_16F
+ *   - alpha/beta scalars:  float  →  __half  (required by cuBLAS when compute type is FP16)
+ *
+ * Why do this?
+ *   CUBLAS_COMPUTE_16F lets cuBLAS select Tensor Core kernels that accumulate in FP16
+ *   rather than widening each partial sum to FP32.  On SM80 (A100) this can increase
+ *   effective TFLOP/s by using more of the FP16 peak bandwidth, at the cost of reduced
+ *   numerical precision in the dot products.
+ *
+ * Trade-off:
+ *   - Faster:  fewer register transfers; FP16 accumulation pipeline has higher throughput.
+ *   - Lossy:   for large hidden dims (e.g. dim=4096), summing 4096 FP16 products in FP16
+ *              can lose ~1-2 ULP per step; the effect is visible as slightly higher
+ *              logit deviation vs the FP32-accumulation baseline.
+ *   - Stable:  in practice LLaMA-2 7B weights are well-conditioned; output text quality
+ *              is usually indistinguishable, but divergence from FP32 is measurable.
  *
  * Weights:     __half (FP16) on GPU  →  halves VRAM vs FP32
- * Arithmetic:  CUBLAS_COMPUTE_32F   →  FP32 accumulation (no quality loss)
+ * Arithmetic:  CUBLAS_COMPUTE_16F   →  FP16 accumulation (fast but lossy)
  * Activations: float  (FP32) on GPU
  *
- * The standard FP32 .bin checkpoint is loaded, weight tensors are
- * converted to FP16 on the CPU, then uploaded to the GPU as __half.
- *
- * Optional --verify flag:
- *   Runs a CPU FP16 forward pass alongside the GPU pass every token and
- *   prints the max absolute logit difference, flagging large divergences.
- *
+ * Build (Linux/WSL):
+ *   nvcc llama2_cublas_fp16tc.cu -o llama2_cublas_fp16tc -lcublas -lm -O2
  * Build (Windows):
- *   nvcc llama2_cublas_fp16.cu win.c -o llama2_cublas_fp16 -lcublas -lm -O2
- * Build (WSL/Linux):
- *   nvcc llama2_cublas_fp16.cu -o llama2_cublas_fp16 -lcublas -lm -O2
+ *   nvcc llama2_cublas_fp16tc.cu win.c -o llama2_cublas_fp16tc -lcublas -lm -O2
  * Usage (same CLI as run.c):
- *   ./llama2_cublas_fp16 model.bin -n 256 -i "Once upon a time" [--verify]
+ *   ./llama2_cublas_fp16tc model.bin -n 256 -i "Once upon a time" [--verify]
  */
 
 #include <stdio.h>
@@ -65,7 +81,7 @@ static cublasHandle_t cublas_handle;
 static bool g_enable_profile    = false;
 static bool g_profile_triggered = false;
 static int  g_profile_pos       = 10;
-static char g_profile_csv_path[512] = "cublas_fp16_profile_metrics.csv";
+static char g_profile_csv_path[512] = "cublas_fp16tc_profile_metrics.csv";
 
 static void append_profile_metrics_csv(
     int token, int pos, int dim, int hidden_dim, int n_heads, int n_kv_heads,
@@ -360,12 +376,29 @@ __global__ void flash_attention_kernel(const float* __restrict__ q,
 }
 
 // ----------------------------------------------------------------------------
-// cuBLAS FP16 matmul helper:  out[d] = W[d x n] @ x[n]  (FP32 accumulation)
+// cuBLAS FP16 Tensor Core matmul helper: out[d] = W[d x n] @ x[n]
 //
-// cublasGemmEx only supports (FP16, FP16) → FP32 with CUBLAS_COMPUTE_32F;
-// (FP16, FP32) → FP32 is not a valid type combination and returns
-// CUBLAS_STATUS_EXECUTION_FAILED.  We therefore convert the FP32 activation
-// vector to FP16 on-the-fly into a reusable scratch buffer.
+// KEY CHANGE vs llama2_cublas_fp16.cu:
+//   CUBLAS_COMPUTE_32F  →  CUBLAS_COMPUTE_16F
+//
+// With CUBLAS_COMPUTE_16F, cuBLAS accumulates partial sums in FP16 rather than
+// FP32, selecting the fastest FP16 Tensor Core path.
+//
+// cuBLAS API constraint:
+//   When computeType == CUBLAS_COMPUTE_16F, the output matrix C MUST be
+//   CUDA_R_16F — CUDA_R_32F is not a valid combination and returns
+//   CUBLAS_STATUS_NOT_SUPPORTED (error 15).  We therefore route the GEMM
+//   output through a reusable FP16 scratch buffer and immediately widen back
+//   to FP32 with a small conversion kernel so the rest of the pipeline stays
+//   in FP32.  The two added kernel launches add negligible overhead vs the GEMM.
+//
+// alpha/beta scalars MUST be __half when computeType == CUBLAS_COMPUTE_16F.
+//
+// Precision impact:
+//   For dim=4096 (LLaMA-2 7B), a single GEMV accumulates 4096 FP16 products.
+//   Rounding error per step is ~2^-10 of the accumulated value vs ~2^-23 for
+//   FP32 accumulation.  Over 4096 terms this produces an output error of
+//   O(sqrt(4096) * 2^-10) ≈ 0.006, measurable with --verify.
 
 __global__ void fp32_to_fp16_kernel(__half* __restrict__ out,
                                      const float* __restrict__ in, int n)
@@ -374,6 +407,15 @@ __global__ void fp32_to_fp16_kernel(__half* __restrict__ out,
     if (i < n) out[i] = __float2half(in[i]);
 }
 
+/* Widen FP16 GEMM output back to FP32 activations */
+__global__ void fp16_to_fp32_kernel(float* __restrict__ out,
+                                     const __half* __restrict__ in, int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) out[i] = __half2float(in[i]);
+}
+
+/* Input activation scratch (FP32 → FP16 before GEMM) */
 static __half*  d_x_fp16_scratch   = NULL;
 static size_t   d_x_fp16_scratch_n = 0;
 
@@ -385,19 +427,34 @@ static void ensure_fp16_scratch(size_t n) {
     }
 }
 
-static void cublas_sgemv_fp16(int n, int d,
-                               const __half* d_W,   /* d_W[n * d] row-major */
-                               const float*  d_x,   /* d_x[n] FP32 activations */
-                               float*        d_y)   /* d_y[d] FP32 output */
+/* Output scratch (FP16 GEMM result, widened back to FP32 afterwards) */
+static __half*  d_y_fp16_scratch   = NULL;
+static size_t   d_y_fp16_scratch_n = 0;
+
+static void ensure_fp16_y_scratch(size_t n) {
+    if (n > d_y_fp16_scratch_n) {
+        if (d_y_fp16_scratch) cudaFree(d_y_fp16_scratch);
+        CUDA_CHECK(cudaMalloc(&d_y_fp16_scratch, n * sizeof(__half)));
+        d_y_fp16_scratch_n = n;
+    }
+}
+
+static void cublas_sgemv_fp16tc(int n, int d,
+                                 const __half* d_W,   /* d_W[n * d] row-major */
+                                 const float*  d_x,   /* d_x[n] FP32 activations */
+                                 float*        d_y)   /* d_y[d] FP32 output */
 {
-    /* Convert activation vector FP32 → FP16 into scratch buffer */
+    /* Step 1: FP32 activation → FP16 input scratch */
     ensure_fp16_scratch(n);
     fp32_to_fp16_kernel<<<(n + 255) / 256, 256>>>(d_x_fp16_scratch, d_x, n);
 
-    const float alpha = 1.0f, beta = 0.0f;
-    /* GemmEx with (FP16, FP16) → FP32, CUBLAS_COMPUTE_32F: supported on CC 7.x+
-     * W is (d×n) row-major; cuBLAS sees it as (n×d) col-major, CUBLAS_OP_T → (d×n). ✓
-     */
+    /* Step 2: GEMM — all operands FP16, compute FP16, output FP16.
+     * CUBLAS_COMPUTE_16F requires Ctype == CUDA_R_16F; CUDA_R_32F output
+     * is not supported and returns CUBLAS_STATUS_NOT_SUPPORTED (error 15). */
+    ensure_fp16_y_scratch(d);
+    const __half alpha = __float2half(1.0f);
+    const __half beta  = __float2half(0.0f);
+
     CUBLAS_CHECK(cublasGemmEx(
         cublas_handle,
         CUBLAS_OP_T, CUBLAS_OP_N,
@@ -406,9 +463,13 @@ static void cublas_sgemv_fp16(int n, int d,
         d_W,              CUDA_R_16F, n,   /* A: weight matrix FP16 */
         d_x_fp16_scratch, CUDA_R_16F, n,   /* B: activation vector FP16 */
         &beta,
-        d_y,              CUDA_R_32F, d,   /* C: output FP32 */
-        CUBLAS_COMPUTE_32F,
+        d_y_fp16_scratch, CUDA_R_16F, d,   /* C: output FP16 (required by COMPUTE_16F) */
+        CUBLAS_COMPUTE_16F,
         CUBLAS_GEMM_DEFAULT));
+
+    /* Step 3: FP16 output → FP32 activation buffer so the rest of the
+     * pipeline (RMSNorm, attention, SwiGLU) remains in FP32. */
+    fp16_to_fp32_kernel<<<(d + 255) / 256, 256>>>(d_y, d_y_fp16_scratch, d);
 }
 
 // ----------------------------------------------------------------------------
@@ -436,15 +497,6 @@ static void map_weights_from_ptr(CPUWeightsFP32* w, Config* p, float* ptr) {
     int head_size = p->dim / p->n_heads;
     unsigned long long nl = p->n_layers;
 
-    /* NOTE: build_transformer calls abs(vocab_size) BEFORE calling this function,
-     * so p->vocab_size is always positive here.  Do NOT derive shared_weights from
-     * vocab_size sign here — build_transformer computes it from the original value
-     * and stores it in w->shared_weights after this call.
-     *
-     * w->wcls must always point to the end-of-file classifier location.  For
-     * shared-weight models upload_weights_to_gpu will ignore this pointer and reuse
-     * d_token_embedding_table; for non-shared models (e.g. llama2-7b where the
-     * original vocab_size is negative) it must point to the real classifier block. */
     w->token_embedding_table = ptr; ptr += (size_t)p->vocab_size * p->dim;
     w->rms_att_weight        = ptr; ptr += nl * p->dim;
     w->wq                    = ptr; ptr += nl * p->dim * (p->n_heads * head_size);
@@ -456,19 +508,15 @@ static void map_weights_from_ptr(CPUWeightsFP32* w, Config* p, float* ptr) {
     w->w2                    = ptr; ptr += nl * p->hidden_dim * p->dim;
     w->w3                    = ptr; ptr += nl * p->dim * p->hidden_dim;
     w->rms_final_weight      = ptr; ptr += p->dim;
-    /* advance past the precomputed freq caches */
     ptr += (size_t)p->seq_len * head_size / 2;
     ptr += (size_t)p->seq_len * head_size / 2;
-    /* always point wcls at the end-of-data location (the separate classifier block).
-     * build_transformer will set shared_weights, and upload_weights_to_gpu will
-     * use d_token_embedding_table instead if shared_weights==1. */
     w->wcls = ptr;
 }
 
 static void upload_weights_to_gpu(GPUWeightsFP16* gw, CPUWeightsFP32* cw, Config* p) {
     int head_size = p->dim / p->n_heads;
     size_t nl = p->n_layers;
-    printf("[fp16] Uploading weights to GPU as FP16...\n");
+    printf("[fp16tc] Uploading weights to GPU as FP16 (compute: CUBLAS_COMPUTE_16F)...\n");
 
     gw->d_token_embedding_table = upload_fp32_as_fp16(cw->token_embedding_table,
                                                        (size_t)p->vocab_size * p->dim);
@@ -492,7 +540,6 @@ static void upload_weights_to_gpu(GPUWeightsFP16* gw, CPUWeightsFP32* cw, Config
     }
 
     size_t fp32_mb = (size_t)p->vocab_size * p->dim * 4 / (1024*1024);
-    /* rough: count all weight elements */
     size_t n_weights = (size_t)p->vocab_size * p->dim
         + nl * p->dim * 2
         + nl * p->dim * (p->n_heads * head_size)
@@ -501,7 +548,7 @@ static void upload_weights_to_gpu(GPUWeightsFP16* gw, CPUWeightsFP32* cw, Config
         + nl * p->dim * p->hidden_dim * 3
         + p->dim;
     size_t fp16_mb = n_weights * 2 / (1024*1024);
-    printf("[fp16] Weights: ~%zu MB FP32 -> ~%zu MB FP16 on GPU\n", fp32_mb, fp16_mb);
+    printf("[fp16tc] Weights: ~%zu MB FP32 -> ~%zu MB FP16 on GPU\n", fp32_mb, fp16_mb);
 }
 
 static void free_gpu_weights(GPUWeightsFP16* gw) {
@@ -549,7 +596,6 @@ static void build_transformer(Transformer* t, const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "Cannot open %s\n", path); exit(EXIT_FAILURE); }
     if (fread(&t->config, sizeof(Config), 1, f) != 1) exit(EXIT_FAILURE);
-    /* vocab_size sign encodes shared_weights */
     int shared = t->config.vocab_size > 0 ? 1 : 0;
     t->config.vocab_size = abs(t->config.vocab_size);
     fseek(f, 0, SEEK_END);
@@ -586,8 +632,7 @@ static void free_transformer(Transformer* t) {
 }
 
 // ----------------------------------------------------------------------------
-// Per-layer bottleneck profiler (analogous to profile_7b_bottlenecks in
-// llama2_cublas.cu, but adapted for FP16 weights / FP32 activations)
+// Per-layer bottleneck profiler (FP16 Tensor Core variant)
 
 static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
     Config*         p = &t->config;
@@ -606,7 +651,7 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
     float stage1_ms = 0.0f, stage2_ms = 0.0f, stage3_ms = 0.0f, stage4_ms = 0.0f;
     float stage5_ms = 0.0f, stage6_ms = 0.0f, stage7_ms = 0.0f, stage8_ms = 0.0f;
 
-    printf("\n=== FP16 MODEL BOTTLENECK ANALYSIS (Layer 0, pos=%d) ===\n", pos);
+    printf("\n=== FP16TC MODEL BOTTLENECK ANALYSIS (CUBLAS_COMPUTE_16F, Layer 0, pos=%d) ===\n", pos);
 
     /* Prime d_x with the token embedding for layer 0 */
     {
@@ -629,14 +674,14 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
     printf("1. RMSNorm (attention):        %.3f ms\n", elapsed_ms);
     stage1_ms = elapsed_ms; total_ms += elapsed_ms;
 
-    /* --- Stage 2: QKV Projections (FP16 weights -> FP32 output) --- */
+    /* --- Stage 2: QKV Projections (FP16 weights, FP16 accumulation -> FP32 output) --- */
     cudaEventRecord(ev_start);
-    cublas_sgemv_fp16(dim, dim,
-                      w->d_wq + (size_t)l * dim * dim,    s->d_xb, s->d_q);
-    cublas_sgemv_fp16(dim, kv_dim,
-                      w->d_wk + (size_t)l * dim * kv_dim, s->d_xb, s->d_k);
-    cublas_sgemv_fp16(dim, kv_dim,
-                      w->d_wv + (size_t)l * dim * kv_dim, s->d_xb, s->d_v);
+    cublas_sgemv_fp16tc(dim, dim,
+                        w->d_wq + (size_t)l * dim * dim,    s->d_xb, s->d_q);
+    cublas_sgemv_fp16tc(dim, kv_dim,
+                        w->d_wk + (size_t)l * dim * kv_dim, s->d_xb, s->d_k);
+    cublas_sgemv_fp16tc(dim, kv_dim,
+                        w->d_wv + (size_t)l * dim * kv_dim, s->d_xb, s->d_v);
     cudaEventRecord(ev_stop);
     cudaEventSynchronize(ev_stop);
     cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
@@ -690,8 +735,8 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
 
     /* --- Stage 5: Output Projection + Residual --- */
     cudaEventRecord(ev_start);
-    cublas_sgemv_fp16(dim, dim,
-                      w->d_wo + (size_t)l * dim * dim, s->d_xb, s->d_xb2);
+    cublas_sgemv_fp16tc(dim, dim,
+                        w->d_wo + (size_t)l * dim * dim, s->d_xb, s->d_xb2);
     { int b = (dim + 255) / 256; add_kernel<<<b, 256>>>(s->d_x, s->d_xb2, dim); }
     cudaEventRecord(ev_stop);
     cudaEventSynchronize(ev_stop);
@@ -711,10 +756,10 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
 
     /* --- Stage 7: FFN W1 + W3 --- */
     cudaEventRecord(ev_start);
-    cublas_sgemv_fp16(dim, hidden_dim,
-                      w->d_w1 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb);
-    cublas_sgemv_fp16(dim, hidden_dim,
-                      w->d_w3 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb2);
+    cublas_sgemv_fp16tc(dim, hidden_dim,
+                        w->d_w1 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb);
+    cublas_sgemv_fp16tc(dim, hidden_dim,
+                        w->d_w3 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb2);
     cudaEventRecord(ev_stop);
     cudaEventSynchronize(ev_stop);
     cudaEventElapsedTime(&elapsed_ms, ev_start, ev_stop);
@@ -725,8 +770,8 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
     cudaEventRecord(ev_start);
     { int b = (hidden_dim + 255) / 256;
       swiglu_kernel<<<b, 256>>>(s->d_hb, s->d_hb2, hidden_dim); }
-    cublas_sgemv_fp16(hidden_dim, dim,
-                      w->d_w2 + (size_t)l * hidden_dim * dim, s->d_hb, s->d_xb);
+    cublas_sgemv_fp16tc(hidden_dim, dim,
+                        w->d_w2 + (size_t)l * hidden_dim * dim, s->d_hb, s->d_xb);
     { int b = (dim + 255) / 256; add_kernel<<<b, 256>>>(s->d_x, s->d_xb, dim); }
     cudaEventRecord(ev_stop);
     cudaEventSynchronize(ev_stop);
@@ -752,7 +797,7 @@ static void profile_7b_bottlenecks(Transformer* t, int token, int pos) {
 }
 
 // ----------------------------------------------------------------------------
-// GPU forward pass (FP16 weights, FP32 activations)
+// GPU forward pass (FP16 weights, FP16 accumulation, FP32 activations)
 
 static float* forward_gpu(Transformer* t, int token, int pos) {
     Config* p  = &t->config;
@@ -781,10 +826,10 @@ static float* forward_gpu(Transformer* t, int token, int pos) {
         /* 2. Attention RMSNorm */
         cuda_rmsnorm_fp16(s->d_xb, s->d_x, w->d_rms_att_weight + (size_t)l * dim, dim);
 
-        /* 3. QKV projections */
-        cublas_sgemv_fp16(dim, dim,  w->d_wq + (size_t)l * dim * dim,               s->d_xb, s->d_q);
-        cublas_sgemv_fp16(dim, kv_dim, w->d_wk + (size_t)l * dim * kv_dim,          s->d_xb, s->d_k);
-        cublas_sgemv_fp16(dim, kv_dim, w->d_wv + (size_t)l * dim * kv_dim,          s->d_xb, s->d_v);
+        /* 3. QKV projections (FP16 compute) */
+        cublas_sgemv_fp16tc(dim, dim,    w->d_wq + (size_t)l * dim * dim,               s->d_xb, s->d_q);
+        cublas_sgemv_fp16tc(dim, kv_dim, w->d_wk + (size_t)l * dim * kv_dim,            s->d_xb, s->d_k);
+        cublas_sgemv_fp16tc(dim, kv_dim, w->d_wv + (size_t)l * dim * kv_dim,            s->d_xb, s->d_v);
 
         /* 4. RoPE */
         {
@@ -820,21 +865,21 @@ static float* forward_gpu(Transformer* t, int token, int pos) {
         }
 
         /* 7. Output projection + residual */
-        cublas_sgemv_fp16(dim, dim, w->d_wo + (size_t)l * dim * dim, s->d_xb, s->d_xb2);
+        cublas_sgemv_fp16tc(dim, dim, w->d_wo + (size_t)l * dim * dim, s->d_xb, s->d_xb2);
         { int b = (dim+255)/256; add_kernel<<<b,256>>>(s->d_x, s->d_xb2, dim); }
 
         /* 8. FFN RMSNorm */
         cuda_rmsnorm_fp16(s->d_xb, s->d_x, w->d_rms_ffn_weight + (size_t)l * dim, dim);
 
         /* 9. FFN W1, W3 */
-        cublas_sgemv_fp16(dim, hidden_dim, w->d_w1 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb);
-        cublas_sgemv_fp16(dim, hidden_dim, w->d_w3 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb2);
+        cublas_sgemv_fp16tc(dim, hidden_dim, w->d_w1 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb);
+        cublas_sgemv_fp16tc(dim, hidden_dim, w->d_w3 + (size_t)l * dim * hidden_dim, s->d_xb, s->d_hb2);
 
         /* 10. SwiGLU */
         { int b = (hidden_dim+255)/256; swiglu_kernel<<<b,256>>>(s->d_hb, s->d_hb2, hidden_dim); }
 
         /* 11. FFN W2 + residual */
-        cublas_sgemv_fp16(hidden_dim, dim, w->d_w2 + (size_t)l * hidden_dim * dim, s->d_hb, s->d_xb);
+        cublas_sgemv_fp16tc(hidden_dim, dim, w->d_w2 + (size_t)l * hidden_dim * dim, s->d_hb, s->d_xb);
         { int b = (dim+255)/256; add_kernel<<<b,256>>>(s->d_x, s->d_xb, dim); }
     }
 
@@ -842,7 +887,7 @@ static float* forward_gpu(Transformer* t, int token, int pos) {
     cuda_rmsnorm_fp16(s->d_x, s->d_x, w->d_rms_final_weight, dim);
 
     /* 13. Classifier */
-    cublas_sgemv_fp16(dim, p->vocab_size, w->d_wcls, s->d_x, s->d_logits);
+    cublas_sgemv_fp16tc(dim, p->vocab_size, w->d_wcls, s->d_x, s->d_logits);
 
     CUDA_CHECK(cudaMemcpy(s->h_logits, s->d_logits,
                           p->vocab_size * sizeof(float), cudaMemcpyDeviceToHost));
@@ -850,11 +895,10 @@ static float* forward_gpu(Transformer* t, int token, int pos) {
 }
 
 // ----------------------------------------------------------------------------
-// CPU FP16 forward pass (--verify mode only)
+// CPU FP16 forward pass (--verify mode only; CPU still accumulates in FP32)
 
 static float cpu_fp16_to_float(__half v) { return __half2float(v); }
 
-/* Allocate a CPU FP16 copy of all weights (for verify mode) */
 static void build_cpu_fp16_weights(CPUWeightsFP16* cw, CPUWeightsFP32* src, Config* p) {
     int head_size = p->dim / p->n_heads;
     size_t nl = p->n_layers;
@@ -1219,7 +1263,6 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
     if (prompt) encode(tok, prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
     if (num_prompt_tokens < 1) { prompt_tokens[0] = 1; num_prompt_tokens = 1; }
 
-    /* scratch buffer for verify: copy GPU logits before softmax modifies them */
     float* gpu_logits_copy = do_verify ? (float*)malloc(p->vocab_size * sizeof(float)) : NULL;
 
     long long start = 0;
@@ -1238,12 +1281,13 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
                 mean_diff += d;
             }
             mean_diff /= p->vocab_size;
+            /* Note: max_diff will be larger here than with COMPUTE_32F because
+             * the GPU accumulates in FP16 while the CPU reference uses FP32. */
             fprintf(stderr, "[verify pos=%3d] max_diff=%.5f  mean_diff=%.6f%s\n",
                     pos, max_diff, mean_diff,
                     (max_diff > 1.0f) ? "  *** LARGE DIVERGENCE ***" : "");
         }
 
-        /* Sampling uses the GPU logits directly (softmax modifies in-place) */
         if (pos < num_prompt_tokens - 1)
             next = prompt_tokens[pos + 1];
         else
@@ -1275,7 +1319,7 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
 // Main
 
 static void error_usage(void) {
-    fprintf(stderr, "Usage: run_fp16_cuda <checkpoint.bin> [options]\n");
+    fprintf(stderr, "Usage: llama2_cublas_fp16tc <checkpoint.bin> [options]\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -t <float>   temperature (default 1.0)\n");
     fprintf(stderr, "  -p <float>   top-p (default 0.9)\n");
@@ -1284,8 +1328,10 @@ static void error_usage(void) {
     fprintf(stderr, "  -i <string>  prompt\n");
     fprintf(stderr, "  -z <string>  tokenizer path (default: tokenizer.bin)\n");
     fprintf(stderr, "  -P <int>     profile layer-0 bottlenecks at this token pos (default: off)\n");
-    fprintf(stderr, "  -R <string>  profiling CSV output path (default: cublas_fp16_profile_metrics.csv)\n");
+    fprintf(stderr, "  -R <string>  profiling CSV output path (default: cublas_fp16tc_profile_metrics.csv)\n");
     fprintf(stderr, "  --verify     compare GPU logits with CPU FP16 each token\n");
+    fprintf(stderr, "\nNote: CUBLAS_COMPUTE_16F means FP16 accumulation — expect larger\n");
+    fprintf(stderr, "      logit diffs vs --verify than the cublas_fp16 (COMPUTE_32F) baseline.\n");
     exit(EXIT_FAILURE);
 }
 
@@ -1336,9 +1382,10 @@ int main(int argc, char* argv[]) {
     {
         cudaDeviceProp prop;
         CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
-        fprintf(stderr, "GPU: %s (CC %d.%d, %.1f GB)\n", prop.name,
+        fprintf(stderr, "[fp16tc] GPU: %s (CC %d.%d, %.1f GB)\n", prop.name,
                 prop.major, prop.minor,
                 prop.totalGlobalMem / (1024.0*1024.0*1024.0));
+        fprintf(stderr, "[fp16tc] Compute mode: CUBLAS_COMPUTE_16F (FP16 accumulation)\n");
     }
     CUBLAS_CHECK(cublasCreate(&cublas_handle));
     CUBLAS_CHECK(cublasSetMathMode(cublas_handle, CUBLAS_TENSOR_OP_MATH));
@@ -1360,10 +1407,10 @@ int main(int argc, char* argv[]) {
     CPUWeightsFP16 cpu_w;
     CPURunState    cpu_s;
     if (do_verify) {
-        fprintf(stderr, "[verify] Building CPU FP16 weight copy...\n");
+        fprintf(stderr, "[verify] Building CPU FP16 weight copy (CPU accumulates FP32)...\n");
         build_cpu_fp16_weights(&cpu_w, &transformer.cpu_w, &transformer.config);
         malloc_cpu_run_state(&cpu_s, &transformer.config);
-        fprintf(stderr, "[verify] Ready. Will print logit diffs per token.\n");
+        fprintf(stderr, "[verify] Ready. Diffs vs GPU will reflect COMPUTE_16F vs COMPUTE_32F gap.\n");
     }
 
     /* Run */
@@ -1375,7 +1422,6 @@ int main(int argc, char* argv[]) {
 
     /* Cleanup */
     if (do_verify) {
-        /* free CPU FP16 weights */
         free(cpu_w.token_embedding_table);
         free(cpu_w.rms_att_weight); free(cpu_w.rms_ffn_weight);
         free(cpu_w.wq); free(cpu_w.wk); free(cpu_w.wv); free(cpu_w.wo);
@@ -1393,6 +1439,7 @@ int main(int argc, char* argv[]) {
     free_tokenizer(&tokenizer);
     free_transformer(&transformer);
     if (d_x_fp16_scratch) cudaFree(d_x_fp16_scratch);
+    if (d_y_fp16_scratch) cudaFree(d_y_fp16_scratch);
     cublasDestroy(cublas_handle);
     return 0;
 }
