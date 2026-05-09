@@ -127,9 +127,26 @@ def main():
     parser = argparse.ArgumentParser(description="Statistical analysis for CUDA profiling CSV")
     parser.add_argument("--input", required=True, help="Input profiling CSV path")
     parser.add_argument("--output", default="", help="Optional summary CSV output path")
+    parser.add_argument(
+        "--warmup-skip",
+        type=int,
+        default=0,
+        metavar="K",
+        help="Drop the first K rows before computing statistics (default: 0). "
+             "Use 3-5 to discard cold-start GPU runs.",
+    )
     args = parser.parse_args()
 
     rows, metric_cols = load_rows(args.input)
+
+    total_rows = len(rows)
+    if args.warmup_skip > 0:
+        if args.warmup_skip >= total_rows:
+            raise ValueError(
+                f"--warmup-skip {args.warmup_skip} >= total rows {total_rows}; "
+                "nothing left to summarise."
+            )
+        rows = rows[args.warmup_skip:]
 
     summaries = {}
     for col in metric_cols:
@@ -137,7 +154,7 @@ def main():
         summaries[col] = summarize(vals)
 
     print("=== Profiling Statistical Summary ===")
-    print(f"Input rows: {len(rows)}")
+    print(f"Input rows: {total_rows} (skipped first {args.warmup_skip} warmup row(s), analysed {len(rows)})")
     if metric_cols != PROFILE_COLUMNS:
         print("Detected non-default CSV schema; summarizing numeric metric columns:")
         print(", ".join(metric_cols))
@@ -161,6 +178,7 @@ def main():
             writer.writerow([
                 "metric",
                 "n",
+                "warmup_skipped",
                 "mean",
                 "std",
                 "min",
@@ -176,6 +194,7 @@ def main():
                 writer.writerow([
                     col,
                     s["n"],
+                    args.warmup_skip,
                     f"{s['mean']:.8f}",
                     f"{s['std']:.8f}",
                     f"{s['min']:.8f}",

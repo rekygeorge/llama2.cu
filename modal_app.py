@@ -1757,8 +1757,22 @@ def main(
                             try:
                                 with open(tmp_local_path, 'rb') as f_in:
                                     data = f_in.read()
-                                with open(local_path, 'wb') as f_out:
-                                    f_out.write(data)
+                                # For CSV files: if the local copy already exists, append
+                                # only the new data rows (skip the header line from the
+                                # downloaded snapshot) so accumulated local history is
+                                # preserved across runs.
+                                is_csv = local_path.endswith('.csv')
+                                local_exists = os.path.exists(local_path)
+                                if is_csv and local_exists:
+                                    lines = data.splitlines(keepends=True)
+                                    # lines[0] is the header — skip it when appending.
+                                    new_rows = b''.join(lines[1:])
+                                    if new_rows:
+                                        with open(local_path, 'ab') as f_out:
+                                            f_out.write(new_rows)
+                                else:
+                                    with open(local_path, 'wb') as f_out:
+                                        f_out.write(data)
                                 os.remove(tmp_local_path)
                                 effective_path = local_path
                             except OSError:
