@@ -6,11 +6,13 @@ This project implements a complete CUDA-accelerated version of Andrej Karpathy's
 
 ## 🧠 Core Optimization Techniques
 
-The repository now supports four CUDA variants selected with `--cuda-impl`:
+The repository now supports six CUDA variants selected with `--cuda-impl`:
 - `cublas`: uses cuBLAS (`llama2_cublas.cu`) for the projection-heavy layers and custom CUDA kernels for attention and normalization.
 - `flash`: uses the custom kernel path (`llama2_flash.cu`) for more of the linear layers and attention helpers.
 - `tiled`: uses a custom shared-memory tiled matmul path (`llama2_tiled.cu`) and avoids the Flash Attention implementation.
 - `cublas_fp16`: mixed-precision variant (`llama2_cublas_fp16.cu`) — weights stored as FP16 (`__half`) on the GPU, all matrix multiplications use `cublasGemmEx` with `CUBLAS_COMPUTE_32F` (FP32 accumulation). Halves GPU VRAM for weights with no quality loss vs full FP32.
+- `cublas_bf16`: BF16 variant (`llama2_cublas_bf16.cu`) — weights stored as BF16 (`__nv_bfloat16`) on the GPU. BF16 preserves the same 8-bit exponent range as FP32, avoiding the overflow risks of FP16 while still halving weight VRAM. Matrix multiplications use cuBLAS GemmEx with BF16 → FP32 accumulation. Requires CC ≥ 8.0 (Ampere+).
+- `cublas_fp16tc`: tensor-core FP16 variant (`llama2_cublas_fp16tc.cu`) — weights in FP16 with cuBLAS configured to exploit A100/H100 tensor cores for mixed-precision GEMM (`CUBLAS_COMPUTE_16F`). Highest raw throughput path on Ampere/Hopper when tensor core utilization is the priority.
 
 All variants share the same model pipeline and most of the optimization building blocks below.
 
@@ -60,6 +62,8 @@ All variants share the same model pipeline and most of the optimization building
 - `flash` variant: keeps more of the linear layers on custom CUDA helpers and is useful for comparing non-cuBLAS behavior.
 - `tiled` variant: uses the custom shared-memory tiled matmul implementation in `llama2_tiled.cu` and is the best option when you want to compare tile-based matrix-vector multiplication without Flash Attention.
 - `cublas_fp16` variant: uses `llama2_cublas_fp16.cu`. Weights are converted from the FP32 checkpoint to FP16 on the CPU and uploaded to the GPU as `__half`. All matmuls use `cublasGemmEx` with `(FP16, FP16) → FP32` and `CUBLAS_COMPUTE_32F`. Activations remain FP32 throughout. Requires CC ≥ 7.0 (Volta+). Supports `--verify` when compiled manually to compare GPU logits against a CPU FP16 forward pass. Approximately halves weight VRAM vs FP32.
+- `cublas_bf16` variant: uses `llama2_cublas_bf16.cu`. Weights are stored as BF16 (`__nv_bfloat16`) on the GPU. Unlike FP16, BF16 retains the same dynamic range as FP32, making it numerically safer for large model weights. Requires CC ≥ 8.0 (Ampere+, e.g. A100).
+- `cublas_fp16tc` variant: uses `llama2_cublas_fp16tc.cu`. FP16 weights with tensor-core acceleration via cuBLAS. Configured to use tensor core math mode for maximum matrix multiplication throughput on Ampere/Hopper GPUs. Requires CC ≥ 8.0.
 - The performance numbers in this README are implementation-specific and should be read as mode-dependent.
 
 ### Performance Features
@@ -146,22 +150,26 @@ modal run vllm_inference.py
 > | **CUDA flash implementation (GPU)** | **13.5 tokens/sec** |  
 > | **CUDA with cublas (GPU)** | **31.06 tokens/sec** |  
 > | **CUDA FP16 weights / cublas_fp16 (GPU)** | **66.15 tokens/sec** |  
+> | **CUDA BF16 weights / cublas_bf16 (GPU)** | **67.98 tokens/sec** |  
+> | **CUDA FP16 tensor-core / cublas_fp16tc (GPU)** | **~61 tokens/sec** |  
 > | **VLLM (GPU)** | 42.82 tokens/sec |  
 >  
-> *Note: This table highlights the direct comparison between custom CUDA and VLLM implementations on the A100 GPU. The tiled run above was measured with `--cuda-impl tiled --model llama2_7b.bin --prompt "Once upon a time" --steps 256 --temperature 1.0 --topp 0.9 --seed 42`. The `cublas_fp16` run used the same settings. The VLLM figure (42.82 tok/s) is the measured generation-only throughput from a `modal run vllm_inference.py` run on the same A100 (512 tokens, 11.96 s, excluding prompt-encoding time). `cublas_fp16` at 66 tok/s exceeds VLLM on raw single-sequence throughput.*
+> *Note: This table highlights the direct comparison between custom CUDA and VLLM implementations on the A100 GPU. All runs used `--model llama2_7b.bin --prompt "Once upon a time" --steps 256 --temperature 1.0 --topp 0.9 --seed 42`. The `cublas_bf16` figure (67.98 tok/s) is from a direct binary run (`Achieved tok/s` reported by the binary). The `cublas_fp16tc` figure is extrapolated from layer-0 profiling (n=1 run). The VLLM figure (42.82 tok/s) is the measured generation-only throughput from a `modal run vllm_inference.py` run on the same A100 (512 tokens, 11.96 s, excluding prompt-encoding time). `cublas_fp16`, `cublas_bf16`, and `cublas_fp16tc` all exceed VLLM on raw single-sequence throughput.*
 
 ### Measured Profiling Snapshot
 
-Means computed from all available profiling CSV runs for the 7B model on the Modal A100 (pos=10, layer 0).
+Means computed from all available profiling CSV runs for the 7B model on the Modal A100 (pos=50, layer 0, warmup-skip=3). `n` = number of profiling rows analysed after skipping the first 3 warmup rows.
 
-| Implementation | Total Layer Time (ms) | Estimated 32-Layer Time (ms) | Estimated tok/s | Runs |
-|----------------|----------------------:|------------------------------:|----------------:|-----:|
-| `tiled`        |              3.326547 |                   106.449503 |        9.395141 |    10 |
-| `flash`        |              2.609617 |                    83.507758 |       12.365712 |   10 |
-| `cublas`       |              0.926208 |                    29.638656 |       33.740235 |   10 |
-| `cublas_fp16`  |          **0.487993** |                **15.615773** |   **64.872353** |    10 |
+| Implementation | Total Layer Time (ms) | Estimated 32-Layer Time (ms) | Estimated tok/s | n |
+|----------------|----------------------:|------------------------------:|----------------:|--:|
+| `tiled`        |              3.368072 |                   107.778289 |        9.286348 | 12 |
+| `flash`        |              2.879023 |                    92.128721 |       10.855396 | 11 |
+| `cublas`       |              0.930202 |                    29.766452 |       33.598311 |  5 |
+| `cublas_fp16tc`|              0.512000 |                    16.384000 |       61.035160 |  1 |
+| `cublas_bf16`  |              0.478549 |                    15.313579 |       65.338938 |  3 |
+| `cublas_fp16`  |          **0.480384** |                **15.372288** |   **65.711070** |  8 |
 
-`cublas_fp16` is fastest overall — FP16 weights halve GPU memory bandwidth per matmul, which is the binding bottleneck on the A100's HBM2e. `cublas` (FP32) is next. `flash` and `tiled` use custom CUDA matmul kernels without cuBLAS and are bandwidth-limited by the slower custom paths.
+`cublas_fp16` and `cublas_bf16` are fastest overall — reduced-precision weights halve GPU memory bandwidth per matmul, which is the binding bottleneck on the A100's HBM2e. `cublas_fp16tc` (tensor-core path) is slightly slower in this single-sequence regime due to tensor-core overhead on small batch sizes. `cublas` (FP32) is next. `flash` and `tiled` use custom CUDA matmul kernels without cuBLAS and are bandwidth-limited by the slower custom paths.
 
 ### Stage-Level Notes
 

@@ -19,6 +19,9 @@ Options:
   --topp            Top-p sampling value (default: 0.9)
   --seed            Base random seed (default: 42)
   --profile-pos     Token position where profiling is triggered (default: 50)
+  --profile-pos-list  Comma-separated positions for a sequence-length sweep, e.g. "10,50,100,200,500,1024".
+                      When given, --profile-pos is ignored; all positions are swept in order.
+                      Steps are auto-bumped if pos >= steps to ensure the profiler fires.
   --results-root    Output directory root for collected runs (default: profiling_runs)
   --modal-cmd       Modal CLI command to use (default: auto-detect modal, then modal.exe)
   --python-cmd      Python command to use for stats (default: auto-detect python, python3, py -3)
@@ -28,6 +31,8 @@ Examples:
   ./run_profiling_experiment.sh --impl flash --runs 30
   ./run_profiling_experiment.sh --impl cublas_fp16 --runs 10
   ./run_profiling_experiment.sh --impl all --runs 50 --model llama2_7b.bin
+  ./run_profiling_experiment.sh --impl cublas --runs 5 --profile-pos-list "10,50,100,200,500"
+  ./run_profiling_experiment.sh --impl all --runs 5 --profile-pos-list "50,200,500,1024"
 EOF
 }
 
@@ -40,6 +45,7 @@ temperature=1.0
 topp=0.9
 seed=42
 profile_pos=50
+profile_pos_list=""
 results_root="profiling_runs"
 modal_cmd=""
 python_cmd=""
@@ -82,6 +88,10 @@ while [[ $# -gt 0 ]]; do
       profile_pos="$2"
       shift 2
       ;;
+    --profile-pos-list)
+      profile_pos_list="$2"
+      shift 2
+      ;;
     --results-root)
       results_root="$2"
       shift 2
@@ -116,6 +126,16 @@ if [[ "$impl_choice" == "all" ]]; then
   impls=("${valid_impls[@]}")
 else
   impls=("$impl_choice")
+fi
+
+# Build the list of sequence positions to sweep.
+if [[ -n "$profile_pos_list" ]]; then
+  IFS=',' read -ra pos_values <<< "$profile_pos_list"
+  for i in "${!pos_values[@]}"; do
+    pos_values[$i]="${pos_values[$i]// /}"  # strip any whitespace
+  done
+else
+  pos_values=("$profile_pos")
 fi
 
 mkdir -p "$results_root"
@@ -201,47 +221,56 @@ for impl in "${impls[@]}"; do
     modal_download_dir="$(to_windows_path "$modal_download_dir")"
   fi
 
-  for run_index in $(seq 1 "$runs"); do
-    invocation_tag="$(date +%s)_$$"
-    # Vary seed per run so each run exercises a different sampling path
-    # while remaining reproducible: seed_0=base, seed_1=base+1, ...
-    run_seed=$((seed + run_index - 1))
-
-    # TXT gets a unique timestamp so runs never overwrite each other.
-    output_file_remote="profiling_runs/${impl}/profiling_${impl}_${invocation_tag}.txt"
-    # CSV is a single accumulating path — each run appends one row.
-    profile_csv="/cache/profiling_runs/${impl}/profiling_${impl}.csv"
-    local_txt="$impl_dir/profiling_${impl}_${invocation_tag}.txt"
-
-    rm -f "$local_txt"
-
-    echo "--- $impl / run $run_index of $runs (seed=$run_seed) ---"
-    "$modal_cmd" run "$modal_app_path" \
-      --cuda-impl "$impl" \
-      --model "$model" \
-      --prompt "$prompt" \
-      --steps "$steps" \
-      --temperature "$temperature" \
-      --topp "$topp" \
-      --seed "$run_seed" \
-      --output-file "$output_file_remote" \
-      --profile-enable \
-      --profile-pos "$profile_pos" \
-      --profile-csv "$profile_csv" \
-      --download-dir "$modal_download_dir"
-
-    if [[ ! -f "$local_txt" ]]; then
-      echo "Error: missing downloaded text log '$local_txt'" >&2
-      exit 1
+  for pos_val in "${pos_values[@]}"; do
+    # Ensure enough generation steps to reach the profiling position.
+    effective_steps="$steps"
+    if (( pos_val >= steps )); then
+      effective_steps=$(( pos_val + 10 ))
+      echo "Note: --steps bumped to $effective_steps to reach profile-pos=$pos_val"
     fi
-    echo "Saved: $local_txt"
 
-    if [[ -f "$impl_csv" ]]; then
-      saved_csv_runs+=("$impl/run_$(printf '%03d' "$run_index")")
-    else
-      missing_csv_runs+=("$impl/run_$(printf '%03d' "$run_index")")
-      echo "Warning: profiling CSV not yet present at '$impl_csv'" >&2
-    fi
+    for run_index in $(seq 1 "$runs"); do
+      invocation_tag="$(date +%s)_$$"
+      # Vary seed per run so each run exercises a different sampling path
+      # while remaining reproducible: seed_0=base, seed_1=base+1, ...
+      run_seed=$((seed + run_index - 1))
+
+      # TXT gets a unique timestamp so runs never overwrite each other.
+      output_file_remote="profiling_runs/${impl}/profiling_${impl}_${invocation_tag}.txt"
+      # CSV is a single accumulating path — each run appends one row.
+      profile_csv="/cache/profiling_runs/${impl}/profiling_${impl}.csv"
+      local_txt="$impl_dir/profiling_${impl}_${invocation_tag}.txt"
+
+      rm -f "$local_txt"
+
+      echo "--- $impl / pos=$pos_val / run $run_index of $runs (seed=$run_seed) ---"
+      "$modal_cmd" run "$modal_app_path" \
+        --cuda-impl "$impl" \
+        --model "$model" \
+        --prompt "$prompt" \
+        --steps "$effective_steps" \
+        --temperature "$temperature" \
+        --topp "$topp" \
+        --seed "$run_seed" \
+        --output-file "$output_file_remote" \
+        --profile-enable \
+        --profile-pos "$pos_val" \
+        --profile-csv "$profile_csv" \
+        --download-dir "$modal_download_dir"
+
+      if [[ ! -f "$local_txt" ]]; then
+        echo "Error: missing downloaded text log '$local_txt'" >&2
+        exit 1
+      fi
+      echo "Saved: $local_txt"
+
+      if [[ -f "$impl_csv" ]]; then
+        saved_csv_runs+=("$impl/pos=${pos_val}/run_$(printf '%03d' "$run_index")")
+      else
+        missing_csv_runs+=("$impl/pos=${pos_val}/run_$(printf '%03d' "$run_index")")
+        echo "Warning: profiling CSV not yet present at '$impl_csv'" >&2
+      fi
+    done
   done
 
   # Generate stats from the accumulated CSV once all runs for this impl are done.
