@@ -152,15 +152,16 @@ modal run vllm_inference.py
 
 ### Measured Profiling Snapshot
 
-The following numbers come from the latest `run_001` profiling artifacts for the 7B model on the Modal A100. They are useful for comparing the implementation families side by side.
+Means computed from all available profiling CSV runs for the 7B model on the Modal A100 (pos=10, layer 0).
 
-| Implementation | Total Layer Time (ms) | Estimated 32-Layer Time (ms) | Estimated tok/s |
-|----------------|----------------------:|------------------------------:|----------------:|
-| `flash` | 2.870272 | 91.848701 | 10.887470 |
-| `cublas` | 0.928768 | 29.720577 | 33.646721 |
-| `tiled` | 3.370510 | 107.856323 | 9.271594 |
+| Implementation | Total Layer Time (ms) | Estimated 32-Layer Time (ms) | Estimated tok/s | Runs |
+|----------------|----------------------:|------------------------------:|----------------:|-----:|
+| `tiled`        |              3.326547 |                   106.449503 |        9.395141 |    10 |
+| `flash`        |              2.609617 |                    83.507758 |       12.365712 |   10 |
+| `cublas`       |              0.926208 |                    29.638656 |       33.740235 |   10 |
+| `cublas_fp16`  |          **0.487993** |                **15.615773** |   **64.872353** |    10 |
 
-Implementation-specific stage timing differences are visible in the plots below. In this snapshot, `cublas` is fastest on the FFN-heavy stages, while `tiled` pays extra cost in the CPU attention and host-device transfer path.
+`cublas_fp16` is fastest overall — FP16 weights halve GPU memory bandwidth per matmul, which is the binding bottleneck on the A100's HBM2e. `cublas` (FP32) is next. `flash` and `tiled` use custom CUDA matmul kernels without cuBLAS and are bandwidth-limited by the slower custom paths.
 
 ### Stage-Level Notes
 
