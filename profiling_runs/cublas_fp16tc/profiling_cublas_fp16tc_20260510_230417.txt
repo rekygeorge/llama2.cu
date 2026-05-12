@@ -1,0 +1,178 @@
+================================================================================
+CUDA LLAMA2 EXECUTION SUMMARY
+================================================================================
+Timestamp: 2026-05-11 06:07:35 UTC
+Model: llama2_7b.bin
+Prompt: Once upon a time
+Steps: 200
+Temperature: 0.0
+Top-p: 0.9
+Seed: 42
+Execution Time: 190.16 seconds
+================================================================================
+
+EXECUTION LOG:
+
+🕐 Execution started: 2026-05-11 06:04:25 UTC
+🚀 Starting CUDA Llama2 compilation and execution with S3 support...
+📂 Working directory: /app
+🤖 Selected model: llama2_7b.bin
+🧩 CUDA implementation: cublas_fp16tc (llama2_cublas_fp16tc.cu)
+📊 Model info: 7B parameter model (large, high quality)
+📏 Expected size: 26.0 GB
+📁 Directory contents: ['plot_seq_sweep.py', 'llama2_cublas_fp16.c', 'profiling_cublas_fp16.csv', 'modal_app.py', 'docs', 'stories15M.bin', 'Tests', 'tokenizer.bin', 'llama2_cublas_fp16.cu', 'llama2_cublas_fp16tc.cu', 'win.c', 'profiling_tiled.csv', 'roofline.py', 'llama2_flash.cu', 'run_profiling_experiment.sh', '.gitignore', 'llama2_cublas_bf16', 'profiling.txt', '.env', 'README.md', 'profile_stats.py', 'profiling_runs', 'llama2.c', 'Makefile', 'profiling_cublas_fp16.txt', 'llama2_tiled.cu', 'llama2_cublas_fp16tc', 'precision_ablation.py', 'win.h', 'llama2_cublas_bf16.cu', '.git', 'tokenizer.model', 'vllm_inference.py', 'llama2_tiled_backup.cu', 'llama2_cublas.cu', 'profiling_cublas.txt', '__pycache__', 'profiling_flash.csv', 'profiling_flash.txt', 'profiling_cublas.csv']
+
+🔍 Verifying CUDA installation...
+✅ CUDA Compiler: nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Jan_15_19:20:09_PST_2025
+Cuda compilation tools, release 12.8, V12.8.61
+Build cuda_12.8.r12.8/compiler.35404655_0
+✅ GPU Status:
+Mon May 11 06:04:25 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:00:06.0 Off |                    0 |
+| N/A   33C    P0             57W /  400W |       0MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+🎯 GPU Details:
+   Name: NVIDIA A100-SXM4-40GB
+   Compute Capability: 8.0
+   Driver Version: 580.95.05
+   Total Memory: 40960 MB
+🔧 CUDA Toolkit: Cuda compilation tools, release 12.8, V12.8.61
+✅ All required source files found
+
+📥 Checking model and tokenizer files...
+📦 Model will be downloaded from S3: llama2_7b.bin
+✅ tokenizer.bin already exists
+
+🔍 Final file validation...
+🔍 Validating model file format...
+📄 Model file header (first 32 bytes): 00100000002b00002000000020000000
+🔮 Magic number: 4096 (0x00001000)
+⚠️  Unknown model format, magic: 00100000002b0000
+✅ All files validated successfully
+
+🔨 Compiling CUDA code...
+🔧 Configuring CUDA shared memory to 96KB per block...
+🔍 Auto-detected GPU compute capability: 8.0 -> sm_80
+🎯 Detected GPU type: A100, using CUDA architecture: sm_80
+⚡ A100 detected: Adding tensor core and advanced optimization flags
+🔧 Compilation command: nvcc -O3 -arch=sm_80 -std=c++17 --use_fast_math --ptxas-options=-v -maxrregcount=64 -Xptxas -maxrregcount=64 -Xptxas --opt-level=3 --default-stream per-thread -DMAX_SHARED_MEMORY_PER_BLOCK=98304 -DUSE_TENSOR_CORES -Xptxas -O3 -o llama2_cublas_fp16tc llama2_cublas_fp16tc.cu -lcudart -lcublas
+✅ CUDA compilation successful!
+⚠️  Compiler warnings: ptxas info    : Overriding maximum register limit 256 for '_Z19fp16_to_fp32_kernelPfPK6__halfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z19fp32_to_fp16_kernelP6__halfPKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z22flash_attention_kernelPKfS0_S0_Pfiiiif' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z10add_kernelPfPKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z13swiglu_kernelPfPKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z11rope_kernelPfS_iiii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z18embed_fp16_to_fp32PfPK6__halfii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z19rmsnorm_fp16_kernelPfPKfPK6__halfif' with  64 of maxrregcount option
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z19fp16_to_fp32_kernelPfPK6__halfi' for 'sm_80'
+ptxas info    : Function properties for _Z19fp16_to_fp32_kernelPfPK6__halfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 4.597 ms
+ptxas info    : Compiling entry function '_Z19fp32_to_fp16_kernelP6__halfPKfi' for 'sm_80'
+ptxas info    : Function properties for _Z19fp32_to_fp16_kernelP6__halfPKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 8 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 2.111 ms
+ptxas info    : Compiling entry function '_Z22flash_attention_kernelPKfS0_S0_Pfiiiif' for 'sm_80'
+ptxas info    : Function properties for _Z22flash_attention_kernelPKfS0_S0_Pfiiiif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 404 bytes cmem[0]
+ptxas info    : Compile time = 41.101 ms
+ptxas info    : Compiling entry function '_Z10add_kernelPfPKfi' for 'sm_80'
+ptxas info    : Function properties for _Z10add_kernelPfPKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 4.756 ms
+ptxas info    : Compiling entry function '_Z13swiglu_kernelPfPKfi' for 'sm_80'
+ptxas info    : Function properties for _Z13swiglu_kernelPfPKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 3.184 ms
+ptxas info    : Compiling entry function '_Z11rope_kernelPfS_iiii' for 'sm_80'
+ptxas info    : Function properties for _Z11rope_kernelPfS_iiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers, 384 bytes cmem[0]
+ptxas info    : Compile time = 7.361 ms
+ptxas info    : Compiling entry function '_Z18embed_fp16_to_fp32PfPK6__halfii' for 'sm_80'
+ptxas info    : Function properties for _Z18embed_fp16_to_fp32PfPK6__halfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 376 bytes cmem[0]
+ptxas info    : Compile time = 1.997 ms
+ptxas info    : Compiling entry function '_Z19rmsnorm_fp16_kernelPfPKfPK6__halfif' for 'sm_80'
+ptxas info    : Function properties for _Z19rmsnorm_fp16_kernelPfPKfPK6__halfif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 13 registers, used 1 barriers, 16 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 5.440 ms
+
+✅ Executable created: /app/llama2_cublas_fp16tc
+📋 Executable info: /app/llama2_cublas_fp16tc: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=5b8fe1ddaab55b1577666fa609dc9d4ac4e1f698, for GNU/Linux 3.2.0, not stripped
+📚 Library dependencies:
+   linux-vdso.so.1 (0x00002ac2b8cb9000)
+   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002ac2b8e00000)
+   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002ac2b9200000)
+   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002ac2b8cdd000)
+   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002ac2c0400000)
+   /lib64/ld-linux-x86-64.so.2 (0x0000563a296f6000)
+   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002ac2b8dc6000)
+   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002ac2b8dcb000)
+   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002ac2b8dd0000)
+   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002ac2c0800000)
+   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002ac2b8dd5000)
+
+🚀 Running CUDA Llama2 inference...
+🤖 Model: llama2_7b.bin
+📝 Prompt: 'Once upon a time'
+⚙️  Steps: 200, Temperature: 0.0, Top-p: 0.9, Seed: 42
+📏 Actual model size being executed: 27.0 GB
+⚠️  Large model detected - monitoring for potential issues...
+💾 GPU memory should be sufficient for A100 (40GB+ available)
+🔧 Run command: ./llama2_cublas_fp16tc llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 200 -t 0.0 -p 0.9 -s 42
+
+🔬 Pre-execution environment check:
+   CUDA_VISIBLE_DEVICES: Not set
+   LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+   PATH: /usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin...
+   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-aa831ad4-99b6-d653-6c93-fd160f6cdab5)
+
+🔄 Execution Strategy #1: Standard execution with 96KB shared memory
+   Environment: {'CUDA_DEVICE_MAX_CONNECTIONS': '32'}
+   Command: ./llama2_cublas_fp16tc llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 200 -t 0.0 -p 0.9 -s 42
+   Timeout: 300s
+
+============================================================
+🤖 LLAMA2 CUDA OUTPUT (llama2_7b.bin) - Strategy 1:
+============================================================
+[fp16tc] Uploading weights to GPU as FP16 (compute: CUBLAS_COMPUTE_16F)...
+STDERR: [fp16tc] GPU: NVIDIA A100-SXM4-40GB (CC 8.0, 39.5 GB)
+[fp16tc] Weights: ~500 MB FP32 -> ~12602 MB FP16 on GPU
+STDERR: [fp16tc] Compute mode: CUBLAS_COMPUTE_16F (FP16 accumulation)
+Once upon a time, there was a little girl who loved to read. She loved to read so much that she would read anything she could get her hands on. She would read the cereal box, the back of the cereal box, the back of the cereal box again, and then she would read the cereal box again. She would read the cereal box so much that she would read the cereal box until she was sick of reading the cereal box.
+STDERR: Achieved tok/s: 61.99
+The little girl loved to read so much that she would read anything she could get her hands on. She would read the cereal box, the back of the cereal box, the back of the cereal box again, and then she would read the cereal box again. She would read the cereal box so much that she would read the cereal box until she was sick of reading the cereal box.
+The little girl
+============================================================
+🔍 Process completed with return code: 0
+✅ Strategy 1 succeeded!
+🎉 CUDA Llama2 execution completed successfully with llama2_7b.bin!

@@ -1,0 +1,209 @@
+================================================================================
+CUDA LLAMA2 EXECUTION SUMMARY
+================================================================================
+Timestamp: 2026-05-10 07:41:02 UTC
+Model: llama2_7b.bin
+Prompt: Once upon a time
+Steps: 510
+Temperature: 1.0
+Top-p: 0.9
+Seed: 44
+Execution Time: 182.70 seconds
+================================================================================
+
+EXECUTION LOG:
+
+🕐 Execution started: 2026-05-10 07:37:59 UTC
+🚀 Starting CUDA Llama2 compilation and execution with S3 support...
+📂 Working directory: /app
+🤖 Selected model: llama2_7b.bin
+🧩 CUDA implementation: cublas_fp16 (llama2_cublas_fp16.cu)
+📊 Model info: 7B parameter model (large, high quality)
+📏 Expected size: 26.0 GB
+📁 Directory contents: ['win.c', 'plot_seq_sweep.py', 'llama2_cublas_fp16.c', 'tokenizer.bin', 'profiling_cublas.txt', 'llama2_cublas_fp16.cu', 'profiling_runs', '.gitignore', 'llama2_tiled_backup.cu', 'profiling_flash.csv', '.env', 'README.md', 'llama2_flash.cu', 'profiling_cublas_fp16.txt', 'docs', 'Makefile', 'llama2_cublas_fp16tc', 'profiling_cublas.csv', 'llama2_cublas_bf16', 'profiling.txt', 'llama2_cublas.cu', 'profile_stats.py', 'llama2_cublas_fp16tc.cu', 'modal_app.py', 'profiling_flash.txt', 'llama2_cublas_bf16.cu', 'stories15M.bin', 'llama2.c', 'vllm_inference.py', '.git', 'win.h', 'Tests', 'run_profiling_experiment.sh', 'profiling_cublas_fp16.csv', '__pycache__', 'llama2_tiled.cu', 'profiling_tiled.csv', 'tokenizer.model']
+
+🔍 Verifying CUDA installation...
+✅ CUDA Compiler: nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Jan_15_19:20:09_PST_2025
+Cuda compilation tools, release 12.8, V12.8.61
+Build cuda_12.8.r12.8/compiler.35404655_0
+✅ GPU Status:
+Sun May 10 07:37:59 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:D6:00.0 Off |                    0 |
+| N/A   34C    P0             58W /  400W |       0MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+🎯 GPU Details:
+   Name: NVIDIA A100-SXM4-40GB
+   Compute Capability: 8.0
+   Driver Version: 580.95.05
+   Total Memory: 40960 MB
+🔧 CUDA Toolkit: Cuda compilation tools, release 12.8, V12.8.61
+✅ All required source files found
+
+📥 Checking model and tokenizer files...
+📦 Model will be downloaded from S3: llama2_7b.bin
+✅ tokenizer.bin already exists
+
+🔍 Final file validation...
+🔍 Validating model file format...
+📄 Model file header (first 32 bytes): 00100000002b00002000000020000000
+🔮 Magic number: 4096 (0x00001000)
+⚠️  Unknown model format, magic: 00100000002b0000
+✅ All files validated successfully
+
+🔨 Compiling CUDA code...
+🔧 Configuring CUDA shared memory to 96KB per block...
+🔍 Auto-detected GPU compute capability: 8.0 -> sm_80
+🎯 Detected GPU type: A100, using CUDA architecture: sm_80
+⚡ A100 detected: Adding tensor core and advanced optimization flags
+🔧 Compilation command: nvcc -O3 -arch=sm_80 -std=c++17 --use_fast_math --ptxas-options=-v -maxrregcount=64 -Xptxas -maxrregcount=64 -Xptxas --opt-level=3 --default-stream per-thread -DMAX_SHARED_MEMORY_PER_BLOCK=98304 -DUSE_TENSOR_CORES -Xptxas -O3 -o llama2_cublas_fp16 llama2_cublas_fp16.cu -lcudart -lcublas
+✅ CUDA compilation successful!
+⚠️  Compiler warnings: ptxas info    : Overriding maximum register limit 256 for '_Z19fp32_to_fp16_kernelP6__halfPKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z22flash_attention_kernelPKfS0_S0_Pfiiiif' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z10add_kernelPfPKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z13swiglu_kernelPfPKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z11rope_kernelPfS_iiii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z18embed_fp16_to_fp32PfPK6__halfii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z19rmsnorm_fp16_kernelPfPKfPK6__halfif' with  64 of maxrregcount option
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z19fp32_to_fp16_kernelP6__halfPKfi' for 'sm_80'
+ptxas info    : Function properties for _Z19fp32_to_fp16_kernelP6__halfPKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 8 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 2.632 ms
+ptxas info    : Compiling entry function '_Z22flash_attention_kernelPKfS0_S0_Pfiiiif' for 'sm_80'
+ptxas info    : Function properties for _Z22flash_attention_kernelPKfS0_S0_Pfiiiif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 404 bytes cmem[0]
+ptxas info    : Compile time = 28.540 ms
+ptxas info    : Compiling entry function '_Z10add_kernelPfPKfi' for 'sm_80'
+ptxas info    : Function properties for _Z10add_kernelPfPKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 1.391 ms
+ptxas info    : Compiling entry function '_Z13swiglu_kernelPfPKfi' for 'sm_80'
+ptxas info    : Function properties for _Z13swiglu_kernelPfPKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 1.237 ms
+ptxas info    : Compiling entry function '_Z11rope_kernelPfS_iiii' for 'sm_80'
+ptxas info    : Function properties for _Z11rope_kernelPfS_iiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers, 384 bytes cmem[0]
+ptxas info    : Compile time = 4.394 ms
+ptxas info    : Compiling entry function '_Z18embed_fp16_to_fp32PfPK6__halfii' for 'sm_80'
+ptxas info    : Function properties for _Z18embed_fp16_to_fp32PfPK6__halfii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 376 bytes cmem[0]
+ptxas info    : Compile time = 0.913 ms
+ptxas info    : Compiling entry function '_Z19rmsnorm_fp16_kernelPfPKfPK6__halfif' for 'sm_80'
+ptxas info    : Function properties for _Z19rmsnorm_fp16_kernelPfPKfPK6__halfif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 13 registers, used 1 barriers, 16 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 3.983 ms
+
+✅ Executable created: /app/llama2_cublas_fp16
+📋 Executable info: /app/llama2_cublas_fp16: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=63529759eb87ba7a473558bef8f7753c523d616c, for GNU/Linux 3.2.0, not stripped
+📚 Library dependencies:
+   linux-vdso.so.1 (0x00002a775fdde000)
+   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002a775fe00000)
+   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002a7760200000)
+   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002a77600b4000)
+   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002a7767400000)
+   /lib64/ld-linux-x86-64.so.2 (0x000056193a336000)
+   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002a776019b000)
+   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002a77601a2000)
+   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002a77601a7000)
+   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002a7767800000)
+   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002a77601ac000)
+
+🚀 Running CUDA Llama2 inference...
+🤖 Model: llama2_7b.bin
+📝 Prompt: 'Once upon a time'
+⚙️  Steps: 510, Temperature: 1.0, Top-p: 0.9, Seed: 44
+📈 Profiling enabled: trigger_pos=500, csv=/cache/profiling_runs/cublas_fp16/profiling_cublas_fp16.csv
+📁 Created CSV directory: /cache/profiling_runs/cublas_fp16
+📏 Actual model size being executed: 27.0 GB
+⚠️  Large model detected - monitoring for potential issues...
+💾 GPU memory should be sufficient for A100 (40GB+ available)
+ℹ️  cublas_fp16: passing -P and -R for bottleneck analysis and CSV output.
+🔧 Run command: ./llama2_cublas_fp16 llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 510 -t 1.0 -p 0.9 -s 44 -P 500 -R /cache/profiling_runs/cublas_fp16/profiling_cublas_fp16.csv
+
+🔬 Pre-execution environment check:
+   CUDA_VISIBLE_DEVICES: Not set
+   LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+   PATH: /usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin...
+   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-78f53539-7a04-6eee-6a13-65e7cfb29356)
+
+🔄 Execution Strategy #1: Standard execution with 96KB shared memory
+   Environment: {'CUDA_DEVICE_MAX_CONNECTIONS': '32'}
+   Command: ./llama2_cublas_fp16 llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 510 -t 1.0 -p 0.9 -s 44 -P 500 -R /cache/profiling_runs/cublas_fp16/profiling_cublas_fp16.csv
+   Timeout: 300s
+
+============================================================
+🤖 LLAMA2 CUDA OUTPUT (llama2_7b.bin) - Strategy 1:
+============================================================
+[fp16] Uploading weights to GPU as FP16...
+STDERR: GPU: NVIDIA A100-SXM4-40GB (CC 8.0, 39.5 GB)
+[fp16] Weights: ~500 MB FP32 -> ~12602 MB FP16 on GPU
+STDERR: Achieved tok/s: 62.65
+Once upon a time there was a very poor family. With four children: mother, father, and two sons, older and younger. The young boy was a quick learner, but with less money the family struggled. The mother felt very sad that she couldn’t feed her children. One day the mother was trying to get something in a cupboard but her son, she couldn’t even lift up the cupboard, wanted to help.
+‘Wait mom, let me help you, let me take the cupboard away.’
+‘Ok, can you do that for me?’ The mother asked.
+‘Yes, mom I can.’ The son replied.
+The boy put his strength to lift the cupboard, but it was very heavy, he couldn’t even stand it. He started crying because of the pain.
+‘Why mom, why didn’t you tell me it’s so heavy?’ The boy asked.
+‘You’re so small, and it’s a little cupboard, I didn’t know you can lift it that much.’ The mother replied.
+‘I’m a strong boy mom, I promise I can do it.’ The boy said.
+‘Oh dear…I’m sorry, I didn’t think about that.’ The mother replied, showing a very sad face.
+They were struggling, and the boy started crying. The father also tried, but he was too weak to move the cupboard, the boy was crying.
+‘What is going on here?’ The father asked.
+‘The cupboard is very heavy.’ The boy replied.
+‘I want to help, but I’m too weak. Look.’ The father replied.
+‘Ok, I’ll try again.’ The boy said.
+‘It is too heavy.’
+‘Yes, I know, I’m struggling.’
+‘Try to lift it again.’
+‘Ok, I will try again.’
+‘I will give you some money so you can go buy some food for yourself.’
+‘I will pay the money, please dad, buy the food.’
+‘No! I will give it to you.’
+‘Ok, thank you, dad.’
+The boy was happy and ran to the market. He asked for a big bag to buy food for the family. He got the food, paid the money and ran as fast as he
+=== FP16 MODEL BOTTLENECK ANALYSIS (Layer 0, pos=500) ===
+1. RMSNorm (attention):        0.013 ms
+2. QKV Projections:            0.114 ms
+3. RoPE + KV Cache:            0.017 ms
+4. Flash Attention:            0.099 ms
+5. Output Proj + Residual:     0.045 ms
+6. RMSNorm (FFN):              0.012 ms
+7. FFN W1+W3:                  0.154 ms
+8. SwiGLU + W2:                0.090 ms
+
+TOTAL LAYER TIME:        0.545 ms
+ESTIMATED 32-LAYER TIME: 17.4 ms = 57.4 tok/s
+Profiling metrics appended to /cache/profiling_runs/cublas_fp16/profiling_cublas_fp16.csv
+ could.
+The boy’s family was waiting
+============================================================
+🔍 Process completed with return code: 0
+✅ Strategy 1 succeeded!
+🎉 CUDA Llama2 execution completed successfully with llama2_7b.bin!

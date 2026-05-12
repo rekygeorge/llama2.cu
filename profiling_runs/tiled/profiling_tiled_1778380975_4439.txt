@@ -1,0 +1,645 @@
+================================================================================
+CUDA LLAMA2 EXECUTION SUMMARY
+================================================================================
+Timestamp: 2026-05-10 02:46:27 UTC
+Model: llama2_7b.bin
+Prompt: Once upon a time
+Steps: 256
+Temperature: 1.0
+Top-p: 0.9
+Seed: 43
+Execution Time: 202.80 seconds
+================================================================================
+
+EXECUTION LOG:
+
+🕐 Execution started: 2026-05-10 02:43:05 UTC
+🚀 Starting CUDA Llama2 compilation and execution with S3 support...
+📂 Working directory: /app
+🤖 Selected model: llama2_7b.bin
+🧩 CUDA implementation: tiled (llama2_tiled.cu)
+📊 Model info: 7B parameter model (large, high quality)
+📏 Expected size: 26.0 GB
+📁 Directory contents: ['llama2_cublas_fp16tc', 'llama2_flash.cu', 'profiling_flash.txt', '.git', 'profiling_cublas_fp16.txt', 'llama2_tiled.cu', 'profiling_cublas_fp16.csv', 'llama2.c', 'llama2_cublas_bf16', '.gitignore', 'win.h', 'tokenizer.bin', 'run_profiling_experiment.sh', 'tokenizer.model', 'stories15M.bin', 'profiling.txt', 'modal_app.py', 'win.c', 'plot_seq_sweep.py', 'llama2_cublas.cu', 'profiling_runs', 'llama2_cublas_fp16.cu', 'README.md', 'profiling_cublas.csv', 'llama2_cublas_bf16.cu', 'vllm_inference.py', 'llama2_tiled_backup.cu', 'Makefile', 'profiling_flash.csv', 'llama2_cublas_fp16.c', '.env', 'profiling_cublas.txt', 'Tests', 'profile_stats.py', 'llama2_cublas_fp16tc.cu', '__pycache__', 'docs', 'profiling_tiled.csv']
+
+🔍 Verifying CUDA installation...
+✅ CUDA Compiler: nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Jan_15_19:20:09_PST_2025
+Cuda compilation tools, release 12.8, V12.8.61
+Build cuda_12.8.r12.8/compiler.35404655_0
+✅ GPU Status:
+Sun May 10 02:43:05 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:0F:00.0 Off |                    0 |
+| N/A   39C    P0             58W /  400W |       0MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+🎯 GPU Details:
+   Name: NVIDIA A100-SXM4-40GB
+   Compute Capability: 8.0
+   Driver Version: 580.95.05
+   Total Memory: 40960 MB
+🔧 CUDA Toolkit: Cuda compilation tools, release 12.8, V12.8.61
+✅ All required source files found
+
+📥 Checking model and tokenizer files...
+📦 Model will be downloaded from S3: llama2_7b.bin
+✅ tokenizer.bin already exists
+
+🔍 Final file validation...
+🔍 Validating model file format...
+📄 Model file header (first 32 bytes): 00100000002b00002000000020000000
+🔮 Magic number: 4096 (0x00001000)
+⚠️  Unknown model format, magic: 00100000002b0000
+✅ All files validated successfully
+
+🔨 Compiling CUDA code...
+🔧 Configuring CUDA shared memory to 96KB per block...
+🔍 Auto-detected GPU compute capability: 8.0 -> sm_80
+🎯 Detected GPU type: A100, using CUDA architecture: sm_80
+⚡ A100 detected: Adding tensor core and advanced optimization flags
+🔧 Compilation command: nvcc -O3 -arch=sm_80 -std=c++17 --use_fast_math --ptxas-options=-v -maxrregcount=64 -Xptxas -maxrregcount=64 -Xptxas --opt-level=3 --default-stream per-thread -DMAX_SHARED_MEMORY_PER_BLOCK=98304 -DUSE_TENSOR_CORES -Xptxas -O3 -o llama2_tiled llama2_tiled.cu -lcudart -lcublas
+✅ CUDA compilation successful!
+⚠️  Compiler warnings: llama2_tiled.cu(642): warning #177-D: variable "hidden_dim" was declared but never referenced
+      int hidden_dim = p->hidden_dim;
+          ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+llama2_tiled.cu(42): warning #550-D: variable "g_cuda_available" was set but never used
+  static bool g_cuda_available = false;
+              ^
+
+ptxas info    : Overriding maximum register limit 256 for '_Z13swiglu_kernelPfS_i' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z22elementwise_add_kernelPfS_i' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z20rmsnorm_apply_kernelPfS_S_fi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z19matmul_kernel_tiledPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z13swiglu_kernelPfS_i' for 'sm_80'
+ptxas info    : Function properties for _Z13swiglu_kernelPfS_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 2.354 ms
+ptxas info    : Compiling entry function '_Z22elementwise_add_kernelPfS_i' for 'sm_80'
+ptxas info    : Function properties for _Z22elementwise_add_kernelPfS_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 1.213 ms
+ptxas info    : Compiling entry function '_Z20rmsnorm_apply_kernelPfS_S_fi' for 'sm_80'
+ptxas info    : Function properties for _Z20rmsnorm_apply_kernelPfS_S_fi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers, 384 bytes cmem[0]
+ptxas info    : Compile time = 1.107 ms
+ptxas info    : Compiling entry function '_Z19matmul_kernel_tiledPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z19matmul_kernel_tiledPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 7.011 ms
+
+✅ Executable created: /app/llama2_tiled
+📋 Executable info: /app/llama2_tiled: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=36db9d7c16aa307e6f83237d3708ee9afcd8fa91, for GNU/Linux 3.2.0, not stripped
+📚 Library dependencies:
+   linux-vdso.so.1 (0x00002b40a3cd0000)
+   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002b40a3e00000)
+   libstdc++.so.6 => /usr/lib/x86_64-linux-gnu/libstdc++.so.6 (0x00002b40a4200000)
+   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002b40a3cf2000)
+   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002b40a3dd9000)
+   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002b40a4600000)
+   /lib64/ld-linux-x86-64.so.2 (0x000055f2582c6000)
+   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002b40a3dfb000)
+   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002b40a40b4000)
+   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002b40a40b9000)
+
+🚀 Running CUDA Llama2 inference...
+🤖 Model: llama2_7b.bin
+📝 Prompt: 'Once upon a time'
+⚙️  Steps: 256, Temperature: 1.0, Top-p: 0.9, Seed: 43
+📈 Profiling enabled: trigger_pos=100, csv=/cache/profiling_runs/tiled/profiling_tiled.csv
+📁 Created CSV directory: /cache/profiling_runs/tiled
+📏 Actual model size being executed: 27.0 GB
+⚠️  Large model detected - monitoring for potential issues...
+💾 GPU memory should be sufficient for A100 (40GB+ available)
+🔧 Run command: ./llama2_tiled llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 43 -P 100 -R /cache/profiling_runs/tiled/profiling_tiled.csv
+
+🔬 Pre-execution environment check:
+   CUDA_VISIBLE_DEVICES: Not set
+   LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+   PATH: /usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin...
+   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-83161a8f-59f2-6ba0-592a-c6c64c3ed321)
+
+🔄 Execution Strategy #1: Standard execution with 96KB shared memory
+   Environment: {'CUDA_DEVICE_MAX_CONNECTIONS': '32'}
+   Command: ./llama2_tiled llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 256 -t 1.0 -p 0.9 -s 43 -P 100 -R /cache/profiling_runs/tiled/profiling_tiled.csv
+   Timeout: 300s
+
+============================================================
+🤖 LLAMA2 CUDA OUTPUT (llama2_7b.bin) - Strategy 1:
+============================================================
+Initializing CUDA...
+STDERR: Achieved tok/s: 8.10
+CUDA Status: no error
+Device Count: 1
+Found 1 CUDA device(s)
+Using GPU: NVIDIA A100-SXM4-40GB
+GPU Memory: 39.5 GB
+Compute Capability: 8.0
+Max Shared Memory per Block: 48 KB
+Max Thread Blocks per Grid (per dimension): 2147483647 x 65535 x 65535
+Max Threads per Block: 1024
+Warp Size: 32
+GPU supports large shared memory (>= Ampere architecture)
+Detected A100 GPU - 163 KB shared memory available
+Initializing CUDA libraries...
+CUDA initialization complete!
+Loading model...
+
+=== MEMORY MAPPING TRANSFORMER WEIGHTS ===
+Model Configuration:
+  - Vocabulary size: 32000 tokens
+  - Model dimension: 4096
+  - Number of layers: 32
+  - Number of attention heads: 32
+  - Number of key/value heads: 32
+  - Head size: 128
+  - Hidden dimension: 11008
+  - Max sequence length: 2048
+  - Shared classifier weights: No
+
+1. Token Embedding Table:
+   - Dimensions: [32000, 4096] (vocab_size × dim)
+   - Memory: 131072000 floats = 500.00 MB
+   - Purpose: Maps vocabulary tokens to dense vector embeddings
+
+2. Attention RMSNorm Weights:
+   - Dimensions: [32, 4096] (n_layers × dim)
+   - Memory: 131072 floats = 0.50 MB
+   - Purpose: Scaling parameters for RMSNorm before self-attention
+
+3. Query Projection Weights (Wq):
+   - Dimensions: [32, 4096, 4096] (n_layers × dim × dim)
+   - Memory: 536870912 floats = 2048.00 MB
+   - Purpose: Projects input vectors to query vectors for multi-head attention
+
+4. Key Projection Weights (Wk):
+   - Dimensions: [32, 4096, 128] (n_layers × dim ×  head_size)
+   - Memory: 536870912 floats = 2048.00 MB
+   - Purpose: Projects input vectors to key vectors for attention computation
+
+5. Value Projection Weights (Wv):
+   - Dimensions: [32, 4096, 128] (n_layers × dim × kv_head_size)
+   - Memory: 536870912 floats = 2048.00 MB
+   - Purpose: Projects input vectors to value vectors for attention computation
+
+6. Output Projection Weights (Wo):
+   - Dimensions: [32, 4096, 4096] (n_layers × dim × dim)
+   - Memory: 536870912 floats = 2048.00 MB
+   - Purpose: Projects concatenated attention head outputs back to model dimension
+
+7. Feedforward RMSNorm Weights:
+   - Dimensions: [32, 4096] (n_layers × dim)
+   - Memory: 131072 floats = 0.50 MB
+   - Purpose: Scaling parameters for RMSNorm before feedforward network
+
+8. Feedforward Gate Projection Weights (W1):
+   - Dimensions: [32, 4096, 11008] (n_layers × dim × hidden_dim)
+   - Memory: 1442840576 floats = 5504.00 MB
+   - Purpose: Gate projection in SwiGLU activation (part of feedforward network)
+
+9. Feedforward Down Projection Weights (W2):
+   - Dimensions: [32, 11008, 4096] (n_layers × hidden_dim × dim)
+   - Memory: 1442840576 floats = 5504.00 MB
+   - Purpose: Projects from hidden dimension back to model dimension in feedforward
+
+10. Feedforward Up Projection Weights (W3):
+    - Dimensions: [32, 4096, 11008] (n_layers × dim × hidden_dim)
+    - Memory: 1442840576 floats = 5504.00 MB
+    - Purpose: Value projection in SwiGLU activation (multiplied with gated W1 output)
+
+11. Final RMSNorm Weights:
+    - Dimensions: [4096] (dim)
+    - Memory: 4096 floats = 0.02 MB
+    - Purpose: Final layer normalization before classification layer
+
+12. Skipping RoPE Frequency Caches:
+    - Cos cache size: 131072 floats
+    - Sin cache size: 131072 floats
+    - Purpose: Pre-computed cosine/sine values for Rotary Position Embedding
+
+13. Classifier Weights: SEPARATE
+    - Dimensions: [32000, 4096] (vocab_size × dim)
+    - Memory: 131072000 floats = 500.00 MB
+    - Purpose: Projects final hidden states to vocabulary logits
+
+=== TOTAL MEMORY SUMMARY ===
+Total transformer weights: 6738415616 floats = 25705.02 MB
+Frequency caches: 262144 floats = 1.00 MB
+=====================================
+
+Copying weights to GPU...
+Weights copied to GPU successfully.
+Model loaded successfully!
+Model parameters:
+  Dimensions: 4096
+  Layers: 32
+  Heads: 32
+  KV Heads: 32
+  Vocab size: 32000
+  Sequence length: 2048
+  Head size: 128
+  Hidden dimension: 11008
+Loading tokenizer...
+
+=== BUILDING TOKENIZER ===
+Tokenizer file: tokenizer.bin
+Expected vocabulary size: 32000 tokens
+
+1. Setting vocabulary size: 32000
+2. Allocated vocabulary pointer array: 32000 pointers = 256000 bytes
+3. Allocated vocabulary scores array: 32000 floats = 128000 bytes
+4. Initialized sorted vocabulary as NULL (created lazily)
+5. Initializing byte pieces for single-byte tokens:
+   - Created 256 single-byte token representations (512 bytes total)
+   - Examples: byte_pieces[0] = '\0', byte_pieces[65*2] = 'A', byte_pieces[32*2] = ' '
+
+6. Opening tokenizer file: tokenizer.bin
+7. Read max token length: 27 characters
+
+8. Reading vocabulary entries from file:
+   Token   0: score=  0.0000, length= 5, string="<unk>"
+   Token   1: score=  0.0000, length= 5, string="\n<s>\n"
+   Token   2: score=  0.0000, length= 6, string="\n</s>\n"
+   Token   3: score=  0.0000, length= 6, string="<0x00>"
+   Token   4: score=  0.0000, length= 6, string="<0x01>"
+   Token   5: score=  0.0000, length= 6, string="<0x02>"
+   Token   6: score=  0.0000, length= 6, string="<0x03>"
+   Token   7: score=  0.0000, length= 6, string="<0x04>"
+   Token   8: score=  0.0000, length= 6, string="<0x05>"
+   Token   9: score=  0.0000, length= 6, string="<0x06>"
+   Token  10: score=  0.0000, length= 6, string="<0x07>"
+   Token  11: score=  0.0000, length= 6, string="<0x08>"
+   Token  12: score=  0.0000, length= 6, string="<0x09>"
+   Token  13: score=  0.0000, length= 6, string="<0x0A>"
+   Token  14: score=  0.0000, length= 6, string="<0x0B>"
+   Token  15: score=  0.0000, length= 6, string="<0x0C>"
+   Token  16: score=  0.0000, length= 6, string="<0x0D>"
+   Token  17: score=  0.0000, length= 6, string="<0x0E>"
+   Token  18: score=  0.0000, length= 6, string="<0x0F>"
+   Token  19: score=  0.0000, length= 6, string="<0x10>"
+   ... (showing first 20 tokens only)
+
+=== TOKENIZER MEMORY SUMMARY ===
+Vocabulary pointer array: 256000 bytes
+Vocabulary scores array: 128000 bytes
+Vocabulary strings total: 209865 bytes
+Byte pieces array: 512 bytes
+Sorted vocabulary: 0 bytes (created lazily)
+Total tokenizer memory: 594377 bytes = 580.45 KB
+
+=== TOKENIZER STATISTICS ===
+Total vocabulary size: 32000 tokens
+Maximum token length: 27 characters
+Token composition:
+  - Single character tokens: 96
+  - Multi-character tokens: 31904
+  - Special tokens (< >): 258
+Score range: -1000000000.0000 to 0.0000
+
+Example token categories:
+  - BOS (Beginning of Sequence): token 1 = "
+<s>
+"
+  - EOS (End of Sequence): token 2 = "
+</s>
+"
+  - Space character: token 32 = "<0x1D>"
+  - Letter 'A': token 65 = "<0x3E>"
+  - Letter 'a': token 97 = "<0x5E>"
+===============================
+
+Generation parameters:
+  Temperature: 1.00
+  Top-p: 0.90
+  Steps: 256
+  Random seed: 43
+  Profiling: enabled (trigger pos=100, csv=/cache/profiling_runs/tiled/profiling_tiled.csv)
+
+Tiled GEMM: ENABLED (CUDA mode)
+
+
+=== ENCODING TEXT TO TOKENS ===
+Input text: "Once upon a time"
+Add BOS (Beginning of Sequence): Yes
+Add EOS (End of Sequence): No
+Text length: 16 characters
+
+1. Setting up sorted vocabulary for binary search:
+   - Creating sorted vocabulary array...
+   - Memory allocated: 32000 TokenIndex structs = 512000 bytes
+   - Sorted 32000 vocabulary entries alphabetically
+
+2. Allocated working buffer: 57 bytes
+3. Initialized encoding state: str_len=0, n_tokens=0
+
+4. Processing special tokens:
+   - Added BOS token: ID=1 at position 0
+   - Added space prefix token: ID=29871 at position 1
+
+5. Initial token array state:
+   Current tokens: [1, 29871]
+   Token count: 2
+
+6. Processing input text character by character:
+   Character 1: 'O' (0x4F)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "O" (length=1)
+     -> Vocabulary lookup for "O": FOUND (ID=29949)
+     -> Added token 29949 at position 2
+     -> Current token count: 3
+   Character 2: 'n' (0x6E)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "n" (length=1)
+     -> Vocabulary lookup for "n": FOUND (ID=29876)
+     -> Added token 29876 at position 3
+     -> Current token count: 4
+   Character 3: 'c' (0x63)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "c" (length=1)
+     -> Vocabulary lookup for "c": FOUND (ID=29883)
+     -> Added token 29883 at position 4
+     -> Current token count: 5
+   Character 4: 'e' (0x65)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "e" (length=1)
+     -> Vocabulary lookup for "e": FOUND (ID=29872)
+     -> Added token 29872 at position 5
+     -> Current token count: 6
+   Character 5: ' ' (0x20)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: " " (length=1)
+     -> Vocabulary lookup for " ": FOUND (ID=29871)
+     -> Added token 29871 at position 6
+     -> Current token count: 7
+   Character 6: 'u' (0x75)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "u" (length=1)
+     -> Vocabulary lookup for "u": FOUND (ID=29884)
+     -> Added token 29884 at position 7
+     -> Current token count: 8
+   Character 7: 'p' (0x70)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "p" (length=1)
+     -> Vocabulary lookup for "p": FOUND (ID=29886)
+     -> Added token 29886 at position 8
+     -> Current token count: 9
+   Character 8: 'o' (0x6F)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "o" (length=1)
+     -> Vocabulary lookup for "o": FOUND (ID=29877)
+     -> Added token 29877 at position 9
+     -> Current token count: 10
+   Character 9: 'n' (0x6E)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "n" (length=1)
+     -> Vocabulary lookup for "n": FOUND (ID=29876)
+     -> Added token 29876 at position 10
+     -> Current token count: 11
+   Character 10: ' ' (0x20)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: " " (length=1)
+     -> Vocabulary lookup for " ": FOUND (ID=29871)
+     -> Added token 29871 at position 11
+     -> Current token count: 12
+   Character 11: 'a' (0x61)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "a" (length=1)
+     -> Vocabulary lookup for "a": FOUND (ID=29874)
+     -> Added token 29874 at position 12
+     -> Current token count: 13
+   Character 12: ' ' (0x20)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: " " (length=1)
+     -> Vocabulary lookup for " ": FOUND (ID=29871)
+     -> Added token 29871 at position 13
+     -> Current token count: 14
+   Character 13: 't' (0x74)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "t" (length=1)
+     -> Vocabulary lookup for "t": FOUND (ID=29873)
+     -> Added token 29873 at position 14
+     -> Current token count: 15
+   Character 14: 'i' (0x69)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "i" (length=1)
+     -> Vocabulary lookup for "i": FOUND (ID=29875)
+     -> Added token 29875 at position 15
+     -> Current token count: 16
+   Character 15: 'm' (0x6D)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "m" (length=1)
+     -> Vocabulary lookup for "m": FOUND (ID=29885)
+     -> Added token 29885 at position 16
+     -> Current token count: 17
+   Character 16: 'e' (0x65)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "e" (length=1)
+     -> Vocabulary lookup for "e": FOUND (ID=29872)
+     -> Added token 29872 at position 17
+     -> Current token count: 18
+
+7. After initial tokenization:
+   Tokens: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 29871, 29874, 29871, 29873, 29875, 29885, 29872]
+   Token count: 18
+   Token strings: ["
+<s>
+", " ", "O", "n", "c", "e", " ", "u", "p", "o", "n", " ", "a", " ", "t", "i", "m", "e"]
+
+8. Starting BPE merge phase:
+   Merge iteration 1:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: " "+"u" = " u" (ID=318, score=-59.0000) at position 6
+     -> Better merge found: "o"+"n" = "on" (ID=265, score=-6.0000) at position 9
+     -> Better merge found: " "+"a" = " a" (ID=263, score=-4.0000) at position 11
+     -> Better merge found: " "+"t" = " t" (ID=260, score=-1.0000) at position 13
+     -> Applying merge: tokens[13]+tokens[14] -> token 260
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 29871, 29874, 29871, 29873, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 29871, 29874, 260, 29875, 29885, 29872]
+     -> New token count: 17
+   Merge iteration 2:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: " "+"u" = " u" (ID=318, score=-59.0000) at position 6
+     -> Better merge found: "o"+"n" = "on" (ID=265, score=-6.0000) at position 9
+     -> Better merge found: " "+"a" = " a" (ID=263, score=-4.0000) at position 11
+     -> Applying merge: tokens[11]+tokens[12] -> token 263
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 29871, 29874, 260, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 263, 260, 29875, 29885, 29872]
+     -> New token count: 16
+   Merge iteration 3:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: " "+"u" = " u" (ID=318, score=-59.0000) at position 6
+     -> Better merge found: "o"+"n" = "on" (ID=265, score=-6.0000) at position 9
+     -> Applying merge: tokens[9]+tokens[10] -> token 265
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 263, 260, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 265, 263, 260, 29875, 29885, 29872]
+     -> New token count: 15
+   Merge iteration 4:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: " "+"u" = " u" (ID=318, score=-59.0000) at position 6
+     -> Applying merge: tokens[6]+tokens[7] -> token 318
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 265, 263, 260, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 318, 29886, 265, 263, 260, 29875, 29885, 29872]
+     -> New token count: 14
+   Merge iteration 5:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: "i"+"m" = "im" (ID=326, score=-67.0000) at position 11
+     -> Applying merge: tokens[11]+tokens[12] -> token 326
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 318, 29886, 265, 263, 260, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 318, 29886, 265, 263, 260, 326, 29872]
+     -> New token count: 13
+   Merge iteration 6:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Applying merge: tokens[4]+tokens[5] -> token 346
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 318, 29886, 265, 263, 260, 326, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 346, 318, 29886, 265, 263, 260, 326, 29872]
+     -> New token count: 12
+   Merge iteration 7:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Applying merge: tokens[1]+tokens[2] -> token 438
+     -> Before merge: [1, 29871, 29949, 29876, 346, 318, 29886, 265, 263, 260, 326, 29872]
+     -> After merge:  [1, 438, 29876, 346, 318, 29886, 265, 263, 260, 326, 29872]
+     -> New token count: 11
+   Merge iteration 8:
+     Searching for best merge candidate...
+     -> Better merge found: " O"+"n" = " On" (ID=1551, score=-1292.0000) at position 1
+     -> Better merge found: " u"+"p" = " up" (ID=701, score=-442.0000) at position 4
+     -> Better merge found: "im"+"e" = "ime" (ID=603, score=-344.0000) at position 9
+     -> Applying merge: tokens[9]+tokens[10] -> token 603
+     -> Before merge: [1, 438, 29876, 346, 318, 29886, 265, 263, 260, 326, 29872]
+     -> After merge:  [1, 438, 29876, 346, 318, 29886, 265, 263, 260, 603]
+     -> New token count: 10
+   Merge iteration 9:
+     Searching for best merge candidate...
+     -> Better merge found: " O"+"n" = " On" (ID=1551, score=-1292.0000) at position 1
+     -> Better merge found: " u"+"p" = " up" (ID=701, score=-442.0000) at position 4
+     -> Applying merge: tokens[4]+tokens[5] -> token 701
+     -> Before merge: [1, 438, 29876, 346, 318, 29886, 265, 263, 260, 603]
+     -> After merge:  [1, 438, 29876, 346, 701, 265, 263, 260, 603]
+     -> New token count: 9
+   Merge iteration 10:
+     Searching for best merge candidate...
+     -> Better merge found: " O"+"n" = " On" (ID=1551, score=-1292.0000) at position 1
+     -> Better merge found: " t"+"ime" = " time" (ID=931, score=-672.0000) at position 7
+     -> Applying merge: tokens[7]+tokens[8] -> token 931
+     -> Before merge: [1, 438, 29876, 346, 701, 265, 263, 260, 603]
+     -> After merge:  [1, 438, 29876, 346, 701, 265, 263, 931]
+     -> New token count: 8
+   Merge iteration 11:
+     Searching for best merge candidate...
+     -> Better merge found: " O"+"n" = " On" (ID=1551, score=-1292.0000) at position 1
+     -> Applying merge: tokens[1]+tokens[2] -> token 1551
+     -> Before merge: [1, 438, 29876, 346, 701, 265, 263, 931]
+     -> After merge:  [1, 1551, 346, 701, 265, 263, 931]
+     -> New token count: 7
+   Merge iteration 12:
+     Searching for best merge candidate...
+     -> Better merge found: " On"+"ce" = " Once" (ID=9038, score=-8779.0000) at position 1
+     -> Better merge found: " up"+"on" = " upon" (ID=2501, score=-2242.0000) at position 3
+     -> Applying merge: tokens[3]+tokens[4] -> token 2501
+     -> Before merge: [1, 1551, 346, 701, 265, 263, 931]
+     -> After merge:  [1, 1551, 346, 2501, 263, 931]
+     -> New token count: 6
+   Merge iteration 13:
+     Searching for best merge candidate...
+     -> Better merge found: " On"+"ce" = " Once" (ID=9038, score=-8779.0000) at position 1
+     -> Applying merge: tokens[1]+tokens[2] -> token 9038
+     -> Before merge: [1, 1551, 346, 2501, 263, 931]
+     -> After merge:  [1, 9038, 2501, 263, 931]
+     -> New token count: 5
+   Merge iteration 14:
+     Searching for best merge candidate...
+     -> No more merges possible. BPE complete.
+
+9. Finalizing token sequence:
+
+=== ENCODING COMPLETE ===
+Final token count: 5
+Final token IDs: [1, 9038, 2501, 263, 931]
+Final token strings: ["
+<s>
+", " Once", " upon", " a", " time"]
+Reconstructed text: "
+<s>
+ Once upon a time"
+
+Memory usage during encoding:
+  - Working buffer: 57 bytes
+  - Output tokens array: 5 * 4 = 20 bytes
+  - Sorted vocabulary (if created): 512000 bytes
+BPE merge iterations: 13
+==========================
+
+=== TILED GEMM GPU GENERATION ===
+Using Tiled GEMM with CUDA acceleration
+Steps: 256
+Prompt: "Once upon a time"
+=====================================
+
+Starting generation with token 1 ("
+<s>
+")
+Initial prompt tokens: 5
+Detected GPU: NVIDIA A100-SXM4-40GB
+Compute Capability: 8.0
+SMs: 108, Shared Memory: 48 KB
+Once upon a time, in a kingdom called Ruritania, there lived a king and queen who had no children. There were four knights who lived at court, two of them the king's brothers, the other two cousins of the king. Their names were Prince Florestan, Count Cyril, Prince Hubert, and Count Conrad. Prince Florestan and Count Cyril were very fond of each other, and they had their horses saddled the same
+=== MODEL BOTTLENECK ANALYSIS (Layer 0, pos=100) ===
+1. RMSNorm (attention):        0.038 ms
+2. QKV Projections:            0.984 ms
+3. QKV->CPU Transfer:          0.061 ms
+4. KV Cache Write (CPU):       0.003 ms
+5. RoPE Encoding (CPU):        0.043 ms
+6. CPU Multi-Head Attention:   0.426 ms
+7. Attn->GPU Transfer:         0.020 ms
+8. Output Proj + Residual:     0.336 ms
+
+TOTAL LAYER TIME: 3.699 ms
+ESTIMATED 32-LAYER TIME: 118.4 ms = 8.4 tok/s
+Profiling metrics appended to /cache/profiling_runs/tiled/profiling_tiled.csv
+ time every morning and rode out of the town together. If the prince wished to be gone half an hour earlier than his usual time, Count Cyril was always ready.
+The Counts were also fond of hunting; but Prince Florestan and Prince Hubert often went out alone together. They were both brave, good-hearted fellows, and loved their princess, the daughter of their king. The princess loved them, too, and that was more than the King liked to think of. But the King knew that Prince Florestan had good, strong arms and a ready sword; and he thought that his daughter might not live to marry another prince if the heir to the throne should be destroyed by those bad fellows in Ruritania,
+Achieved tok/s: 8.10
+
+Cleaning up...
+Done.
+============================================================
+🔍 Process completed with return code: 0
+✅ Strategy 1 succeeded!
+🎉 CUDA Llama2 execution completed successfully with llama2_7b.bin!

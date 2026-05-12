@@ -175,7 +175,182 @@ Means computed from all available profiling CSV runs for the 7B model on the Mod
 
 The profiling CSVs are normalized to a common schema for `flash` and `cublas`, while `tiled` exposes the same conceptual stages with implementation-specific labels (`cpu_attn_ms` and `h2d_out_proj_res_ms`). The plots and summary table above map those labels back to the closest shared stage names so the comparison stays readable.
 
-## � Debugging Notes & Lessons Learned
+---
+
+## ⚖️ Evaluation Methodology & Baseline Fairness
+
+> Detailed step-by-step implementation tasks are in [docs/research_directions.md](docs/research_directions.md).
+
+### Canonical experiment protocol
+
+All six variants are compared under a single fixed config to ensure apples-to-apples results:
+
+| Parameter | Value |
+|---|---|
+| Model | `llama2_7b.bin` |
+| Prompt | `"Once upon a time"` |
+| Steps | 256 |
+| Temperature / Top-p / Seed | 1.0 / 0.9 / 42 |
+| Profile position | 50 (warm KV-cache, not cold-start) |
+| Minimum runs per impl | 30 |
+| Warmup rows discarded | 5 |
+
+The shell script writes each run's exact parameters into `run_config.json` inside the run directory so any aggregation that mixes incompatible configs is detectable.
+
+### External baselines
+
+Two external baselines are included for context:
+
+- **vLLM** — production-grade inference engine (42.82 tok/s, measured end-to-end over 512 tokens). For a fully apples-to-apples comparison, `vllm_inference.py` should log per-token timestamps so steady-state latency at `pos≈50` can be extracted to match the per-layer profiling window.
+- **HuggingFace Transformers + torch.compile** (`benchmark_hf.py`, planned) — the standard reference in LLM systems papers; FP16, `reduce-overhead` compile mode, 30 runs × 256 tokens.
+
+---
+
+## 📐 Roofline Analysis
+
+> Full theory, corrected hardware constants, stage FLOP derivations, per-impl attainment tables, and bandwidth methodology are in [docs/roofline_analysis.md](docs/roofline_analysis.md).
+
+The **Roofline model** places each profiled stage on a log–log chart bounded by two ceilings:
+- **Memory-bandwidth ceiling** (slope) — `GFLOPs/s = AI × BW` where `BW = 2000 GB/s` on the A100 SXM4.
+- **Compute ceiling** (horizontal) — **19.5 TFLOP/s** (FP32 CUDA cores), **77.6 TFLOP/s** (TF32-TC dense), or **312 TFLOP/s** (FP16/BF16-TC dense). The ~624 TFLOP/s FP16-TC figure refers to 2:4 structured sparsity only.
+
+Arithmetic intensity (AI = FLOPs / bytes) determines which ceiling binds first. The ridge points are **9.75 FLOP/byte** (FP32), **38.8 FLOP/byte** (TF32-TC), and **156 FLOP/byte** (FP16-TC dense). At batch = 1 (autoregressive decode), only the **FP32 CUDA-core ceiling** is relevant — cuBLAS does not engage tensor cores for GEMV regardless of `COMPUTE_16F`.
+
+### Key findings (pos = 50, batch = 1)
+
+| Finding | Detail |
+|---|---|
+| All stages are deep memory-bound | Measured AI 0.25–1.0 FLOP/byte vs FP32 ridge at **9.75 FLOP/byte** (10–40× gap) |
+| FP16/BF16 weights double AI | 0.50 → ~1.0 FLOP/byte — explains ~2× tok/s speedup |
+| cuBLAS achieves 4–6× better BW attainment than custom kernels | `ffn_w1w3`: cublas 63.9 % vs flash 15.5 % at identical AI |
+| Tensor Cores (fp16tc) give no gain at batch=1 | MMA 16×8×16 tiles never fill for GEMV; falls back to FP32 CUDA cores |
+| Best measured BW attainment | 63.9 % (`cublas` `ffn_w1w3`); best CMP attainment vs FP32 CUDA-core ceiling ≈ 3–6 % |
+| BW attainment is analytically derived | Analytical byte counts (min. DRAM traffic); true DRAM utilisation requires `ncu dram__bytes` counters |
+
+### Quick regeneration
+
+```bash
+# Run profiling (5 runs, pos=50)
+bash run_profiling_experiment.sh --impl all --runs 5 --profile-pos 50
+
+# Aggregate stats
+python profile_stats.py --warmup-skip 1
+
+# Roofline chart + attainment CSV
+python roofline.py
+# → docs/profiling_plots/roofline.png
+# → docs/profiling_plots/roofline_attainment.csv
+```
+
+---
+
+## 🖥️ Hardware Counter Metrics
+
+> Full metric definitions and `ncu` collection commands are in [docs/research_directions.md](docs/research_directions.md).
+
+Wall-clock time reveals *what* is slow; hardware counters reveal *why*. The profiling infrastructure supports optional Nsight Compute (`ncu`) integration via a `--ncu` flag in `modal_app.py` that prefixes the binary with `ncu --csv --metrics ...`.
+
+Key metrics targeted:
+
+| Metric | Insight |
+|---|---|
+| `l2_global_hit_rate` | Is weight data re-fetched from HBM or served from L2 cache? |
+| `dram__bytes_read.sum` | Actual vs theoretical HBM traffic — quantifies cache efficiency |
+| `sm__cycles_active.avg` | SM idle time between kernel launches (launch-latency tax) |
+| `sm__warps_active.avg.pct_of_peak_sustained_active` | Achieved occupancy — warp count hiding memory latency |
+| `warp_execution_efficiency` | Warp divergence inside kernels |
+
+Measured DRAM bytes from `ncu` will replace theoretical byte-traffic estimates in `roofline.py`, separating cache re-use effects from kernel coding overhead and explaining why best BW attainment is 63.9 % rather than 100 %.
+
+---
+
+## 🎯 Precision Ablation — Quality vs Speed
+
+> Full write-up: **[docs/precision_ablation.md](docs/precision_ablation.md)** · Related methodology: [docs/research_directions.md](docs/research_directions.md)
+
+`cublas_fp16`, `cublas_bf16`, and `cublas_fp16tc` store model weights in FP16 or BF16 instead of FP32. This halves GPU VRAM consumed by weights and yields ~2× higher throughput at batch = 1 (GEMV regime), because fewer bytes are streamed from DRAM per matrix–vector multiply. `precision_ablation.py` answers the key question: **does this speedup cost any output quality?**
+
+### Methodology
+
+All six variants are run with `temperature=0, seed=42` (fully deterministic greedy decoding) on the same prompt. The whitespace-tokenised output is compared against the FP32 `cublas` baseline. Because sampling is deterministic, every difference in the generated text is a numerical rounding artifact, not stochastic noise.
+
+### Quick-start
+
+```bash
+# Token agreement — works immediately, no CUDA changes needed:
+python precision_ablation.py --steps 200
+
+# Re-use cached Modal outputs (skip cloud runs):
+python precision_ablation.py --generations-file ./logit_dumps/generations.json
+
+# Logit MSE / KL divergence (requires -DDUMP_LOGITS compiled binaries):
+python precision_ablation.py --mode logit-mse --logit-dir ./logit_dumps
+
+# Full metrics (token agreement + logit MSE + perplexity):
+python precision_ablation.py --mode all \
+    --logit-dir ./logit_dumps \
+    --token-ids-file ./logit_dumps/token_ids.json
+
+# To run just for one variant 
+python precision_ablation.py --steps 200 --impls cublas --save-generations ./logit_dumps/generations.json
+```
+
+### Results (200 greedy steps, `"Once upon a time"`, A100)
+
+| Impl | Precision | FP32 accum? | tok/s | speedup | tok_agree% |
+|---|---|---|---|---|---|
+| `cublas` | FP32 | ✓ | 31.06 | 1.00× | 100 % (ref) |
+| `flash` | FP32 | ✓ | 13.50 | 0.43× | TBD (exp. ≈ 100 %) |
+| `tiled` | FP32 | ✓ | 6.57 | 0.21× | TBD (exp. ≈ 100 %) |
+| `cublas_fp16` | FP16 | ✓ COMPUTE_32F | 66.15 | 2.13× | TBD (exp. ≥ 95 %) |
+| `cublas_bf16` | BF16 | ✓ COMPUTE_32F | 67.98 | 2.19× | TBD (exp. ≈ 100 %) |
+| `cublas_fp16tc` | FP16-TC | ✗ COMPUTE_16F | 61.00 | 1.96× | TBD |
+
+**Interpretation thresholds:**
+- `tok_agree%` ≥ 95 % → well-behaved reduced-precision inference; negligible quality loss
+- `tok_agree%` = 100 % for FP32 variants → confirms kernel numerical correctness
+- `logit_mse` < 0.01, `kl_div` < 0.001 → token probability distributions effectively identical
+- `perplexity` within ±0.1 nats of FP32 → quality loss is negligible
+
+**Expected outcome:** `cublas_bf16` (BF16 has the same 8-bit exponent range as FP32 and accumulates in FP32 hardware) should show ≈ 100 % agreement at 2.19× throughput — the best combined quality-speed profile. FP16 variants may show slight divergence at large activation magnitudes. `cublas_fp16tc` carries the highest numerical risk because tensor-core accumulation uses FP16 internally.
+
+See **[docs/precision_ablation.md](docs/precision_ablation.md)** for the full analysis: metric definitions, format comparison tables, per-variant outcome expectations, logit-dump methodology, and an explanation of the `extract_generation()` implementation that isolates binary output from Modal's configuration logs.
+
+---
+
+## 📦 Batch-Size Sweep — When Do Tensor Cores Help?
+
+> Detailed batch-sweep implementation plan is in [docs/research_directions.md](docs/research_directions.md).
+
+All current results use **batch = 1**. At batch = 1 every weight projection is a GEMV (matrix × vector) — the 16×8×16 MMA tiles that tensor cores require are never filled, so `cublas_fp16tc` shows no throughput advantage over `cublas_fp16`. At batch ≥ 16 the operations become full GEMMs and tensor-core saturation is expected.
+
+| batch | Expected fastest variant |
+|---|---|
+| 1 | `cublas_bf16` / `cublas_fp16` (both ≈ 2× over FP32) |
+| ~8 | Tensor cores begin engaging |
+| ≥ 16 | `cublas_fp16tc` expected to pull ahead |
+
+A `--batch <int>` argument is planned for all six binaries, with forwarding in `modal_app.py` and `run_profiling_experiment.sh`. The batch-size sweep will identify the crossover point and correctly position the tensor-core path in the performance narrative.
+
+---
+
+## ⚡ FlashAttention-2 Style Kernel (SM80, Planned)
+
+> Complete kernel pseudocode, warp-split design, and implementation steps in [docs/research_directions.md](docs/research_directions.md).
+
+The current `multi_head_flashattention_kernel` in `llama2_flash.cu` follows the FA1 design. Three changes from FlashAttention-2 (Dao, ICLR 2024) apply directly on A100 (SM80):
+
+| Change | Effect |
+|---|---|
+| **Q-outer loop** — Q block loaded once into registers; KV iterated in inner loop | Eliminates repeated Q reload from shared memory; expected ~2× attention speedup |
+| **Warp-level KV split** with `__shfl_sync` partial-result merge | Increases SM utilisation at short context; removes `__syncthreads` between warps |
+| **Eliminate `__syncthreads` inside the KV loop** | Replaces global barriers with warp-level `__shfl_sync` register communication |
+
+Planned as `llama2_flash2.cu` with `--cuda-impl flash2`. Expected: `flash_attn_ms` from 0.063 ms → ~0.030 ms at `pos=50`; 4–8× gain at `pos=1024` where attention dominates total layer time.
+
+---
+
+## 🔧 Debugging Notes & Lessons Learned
 
 ### `cublas_fp16` — Gibberish Output on 7B Model (Root Cause & Fix)
 
@@ -398,8 +573,16 @@ bash run_profiling_experiment.sh --impl flash --runs 30 --modal-cmd modal.exe
 # Windows-safe: force the Python launcher explicitly for the stats step
 bash run_profiling_experiment.sh --impl flash --runs 30 --modal-cmd modal.exe --python-cmd "py -3"
 
-# Run all three implementations with 50 repetitions each
+# Run all six implementations with 50 repetitions each
 bash run_profiling_experiment.sh --impl all --runs 50 --model llama2_7b.bin
+
+# Sequence-length sweep: profile at pos 1, 10, 50, 100, 200 (5 runs per point)
+bash run_profiling_experiment.sh --impl all --runs 5 --profile-pos-list 1,10,50,100,200
+
+# Aggregate stats then generate roofline and sweep plots
+python profile_stats.py --warmup-skip 1
+python roofline.py
+python plot_seq_sweep.py
 ```
 
 Each run directory contains the raw text log, the profiling CSV, and a `profile_stats.csv` summary.
@@ -465,13 +648,19 @@ bash run_profiling_experiment.sh --impl flash --runs 30
 - Report both per-token average and per-layer breakdown
 - Best for real-world throughput comparisons
 
-**Option 3: Cold-Start Analysis (Variability Study)**
+**Option 3: Sequence-Length Sweep (Cold → Warm GPU + Attention Scaling)**
 ```bash
-bash run_profiling_experiment.sh --impl flash --runs 30 --profile-pos 1 --profile-pos 10 --profile-pos 50
+# Profile at multiple KV-cache positions in a single script invocation
+bash run_profiling_experiment.sh --impl all --runs 10 --profile-pos-list 1,10,50,100,200
+
+# Then visualise the sweep
+python plot_seq_sweep.py
+# → docs/profiling_plots/seq_sweep_total_layer_ms.png
+# → docs/profiling_plots/seq_sweep_stages_cublas.png  (stacked bar per stage)
 ```
-- Capture cold, warm, and hot GPU states
-- Document the warmup curve
-- Show 2–3× speedup from warmup effects
+- Captures cold (pos=1), warm (pos=10/50), and extended (pos=100+) KV-cache states
+- Steps are auto-bumped to `pos + 10` when `pos >= steps` so the run always reaches the target position
+- Documents the warmup curve and attention-scaling effect in a single experiment
 
 #### Statistical Validity
 
@@ -507,15 +696,22 @@ llama2-cuda/
 ├── llama2_tiled_backup.cu       # Backup / experimental tiled implementation
 ├── modal_app.py                 # Modal deployment and cloud inference script
 ├── vllm_inference.py            # vLLM cloud inference via Modal
-├── profile_stats.py             # Profiling statistics analysis and CSV summary
-├── run_profiling_experiment.sh  # Batch profiling runner (Bash)
+├── profile_stats.py             # Profiling statistics analysis and CSV summary (warmup-skip clamped)
+├── roofline.py                  # Roofline analysis: arithmetic intensity, attainment %, PNG chart
+├── plot_seq_sweep.py            # Sequence-length sweep plots (per-impl line charts + stacked bars)
+├── run_profiling_experiment.sh  # Batch profiling runner — supports --profile-pos-list sweep
 ├── Makefile                     # Build configuration
 ├── win.c                        # Windows compat shim (karpathy/llama2.c)
 ├── win.h                        # Windows compat shim (karpathy/llama2.c)
 ├── tokenizer.bin                # Tokenizer binary (auto-downloaded by modal_app.py)
 ├── tokenizer.model              # SentencePiece tokenizer model (Meta Llama-2)
 ├── stories15M.bin               # Small test model (15M parameters)
-├── docs/                        # Documentation assets and profiling plots
+├── docs/
+│   ├── roofline_analysis.md     # Roofline theory, stage FLOP derivations, per-impl attainment tables
+│   ├── research_directions.md   # Open tasks: fairer baselines, HW counters, precision ablation, FA2 kernel
+│   ├── cublas_fp16_implementation.md
+│   ├── cublas_bf16_implementation.md
+│   └── profiling_plots/         # roofline.png, roofline_attainment.csv, seq_sweep_*.png
 ├── Tests/                       # Test scripts and debug CUDA implementations
 ├── profiling_runs/              # Per-run profiling artifacts (CSV + TXT)
 └── README.md                    # This documentation

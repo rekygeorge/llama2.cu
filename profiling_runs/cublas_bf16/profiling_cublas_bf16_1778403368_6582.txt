@@ -1,0 +1,202 @@
+================================================================================
+CUDA LLAMA2 EXECUTION SUMMARY
+================================================================================
+Timestamp: 2026-05-10 08:59:12 UTC
+Model: llama2_7b.bin
+Prompt: Once upon a time
+Steps: 510
+Temperature: 1.0
+Top-p: 0.9
+Seed: 42
+Execution Time: 174.93 seconds
+================================================================================
+
+EXECUTION LOG:
+
+🕐 Execution started: 2026-05-10 08:56:17 UTC
+🚀 Starting CUDA Llama2 compilation and execution with S3 support...
+📂 Working directory: /app
+🤖 Selected model: llama2_7b.bin
+🧩 CUDA implementation: cublas_bf16 (llama2_cublas_bf16.cu)
+📊 Model info: 7B parameter model (large, high quality)
+📏 Expected size: 26.0 GB
+📁 Directory contents: ['Tests', 'llama2_cublas_fp16.c', 'run_profiling_experiment.sh', '.gitignore', 'profiling_cublas_fp16.txt', 'llama2_cublas_fp16tc', 'stories15M.bin', 'profiling_cublas.csv', 'docs', 'tokenizer.model', 'plot_seq_sweep.py', 'profiling_flash.csv', 'modal_app.py', 'llama2_cublas_fp16.cu', 'profiling_flash.txt', 'llama2_tiled_backup.cu', 'llama2_cublas.cu', 'tokenizer.bin', 'Makefile', 'llama2_cublas_bf16', 'README.md', 'profiling_cublas_fp16.csv', 'llama2.c', 'profiling_runs', 'llama2_tiled.cu', 'llama2_flash.cu', 'vllm_inference.py', 'win.c', 'llama2_cublas_fp16tc.cu', 'profile_stats.py', 'profiling.txt', 'profiling_cublas.txt', '.env', 'profiling_tiled.csv', 'llama2_cublas_bf16.cu', '.git', '__pycache__', 'win.h']
+
+🔍 Verifying CUDA installation...
+✅ CUDA Compiler: nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Jan_15_19:20:09_PST_2025
+Cuda compilation tools, release 12.8, V12.8.61
+Build cuda_12.8.r12.8/compiler.35404655_0
+✅ GPU Status:
+Sun May 10 08:56:17 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:15:00.0 Off |                    0 |
+| N/A   34C    P0             59W /  400W |       0MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+🎯 GPU Details:
+   Name: NVIDIA A100-SXM4-40GB
+   Compute Capability: 8.0
+   Driver Version: 580.95.05
+   Total Memory: 40960 MB
+🔧 CUDA Toolkit: Cuda compilation tools, release 12.8, V12.8.61
+✅ All required source files found
+
+📥 Checking model and tokenizer files...
+📦 Model will be downloaded from S3: llama2_7b.bin
+✅ tokenizer.bin already exists
+
+🔍 Final file validation...
+🔍 Validating model file format...
+📄 Model file header (first 32 bytes): 00100000002b00002000000020000000
+🔮 Magic number: 4096 (0x00001000)
+⚠️  Unknown model format, magic: 00100000002b0000
+✅ All files validated successfully
+
+🔨 Compiling CUDA code...
+🔧 Configuring CUDA shared memory to 96KB per block...
+🔍 Auto-detected GPU compute capability: 8.0 -> sm_80
+🎯 Detected GPU type: A100, using CUDA architecture: sm_80
+⚡ A100 detected: Adding tensor core and advanced optimization flags
+🔧 Compilation command: nvcc -O3 -arch=sm_80 -std=c++17 --use_fast_math --ptxas-options=-v -maxrregcount=64 -Xptxas -maxrregcount=64 -Xptxas --opt-level=3 --default-stream per-thread -DMAX_SHARED_MEMORY_PER_BLOCK=98304 -DUSE_TENSOR_CORES -Xptxas -O3 -o llama2_cublas_bf16 llama2_cublas_bf16.cu -lcudart -lcublas
+✅ CUDA compilation successful!
+⚠️  Compiler warnings: ptxas info    : Overriding maximum register limit 256 for '_Z19fp32_to_bf16_kernelP13__nv_bfloat16PKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z22flash_attention_kernelPKfS0_S0_Pfiiiif' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z10add_kernelPfPKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z13swiglu_kernelPfPKfi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z11rope_kernelPfS_iiii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z18embed_bf16_to_fp32PfPK13__nv_bfloat16ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z19rmsnorm_bf16_kernelPfPKfPK13__nv_bfloat16if' with  64 of maxrregcount option
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z19fp32_to_bf16_kernelP13__nv_bfloat16PKfi' for 'sm_80'
+ptxas info    : Function properties for _Z19fp32_to_bf16_kernelP13__nv_bfloat16PKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 8 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 2.390 ms
+ptxas info    : Compiling entry function '_Z22flash_attention_kernelPKfS0_S0_Pfiiiif' for 'sm_80'
+ptxas info    : Function properties for _Z22flash_attention_kernelPKfS0_S0_Pfiiiif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 404 bytes cmem[0]
+ptxas info    : Compile time = 28.711 ms
+ptxas info    : Compiling entry function '_Z10add_kernelPfPKfi' for 'sm_80'
+ptxas info    : Function properties for _Z10add_kernelPfPKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 1.695 ms
+ptxas info    : Compiling entry function '_Z13swiglu_kernelPfPKfi' for 'sm_80'
+ptxas info    : Function properties for _Z13swiglu_kernelPfPKfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 1.031 ms
+ptxas info    : Compiling entry function '_Z11rope_kernelPfS_iiii' for 'sm_80'
+ptxas info    : Function properties for _Z11rope_kernelPfS_iiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers, 384 bytes cmem[0]
+ptxas info    : Compile time = 3.877 ms
+ptxas info    : Compiling entry function '_Z18embed_bf16_to_fp32PfPK13__nv_bfloat16ii' for 'sm_80'
+ptxas info    : Function properties for _Z18embed_bf16_to_fp32PfPK13__nv_bfloat16ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 8 registers, used 0 barriers, 376 bytes cmem[0]
+ptxas info    : Compile time = 0.933 ms
+ptxas info    : Compiling entry function '_Z19rmsnorm_bf16_kernelPfPKfPK13__nv_bfloat16if' for 'sm_80'
+ptxas info    : Function properties for _Z19rmsnorm_bf16_kernelPfPKfPK13__nv_bfloat16if
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 1 barriers, 16 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 4.013 ms
+
+✅ Executable created: /app/llama2_cublas_bf16
+📋 Executable info: /app/llama2_cublas_bf16: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=d472e3a8ab0afc08aff2a9979eec33f0ab9ca1df, for GNU/Linux 3.2.0, not stripped
+📚 Library dependencies:
+   linux-vdso.so.1 (0x00002a704b746000)
+   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002a704b800000)
+   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002a704bc00000)
+   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002a704bab4000)
+   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002a7052e00000)
+   /lib64/ld-linux-x86-64.so.2 (0x0000558853908000)
+   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002a704b76a000)
+   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002a704b771000)
+   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002a704b776000)
+   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002a7053200000)
+   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002a704b77b000)
+
+🚀 Running CUDA Llama2 inference...
+🤖 Model: llama2_7b.bin
+📝 Prompt: 'Once upon a time'
+⚙️  Steps: 510, Temperature: 1.0, Top-p: 0.9, Seed: 42
+📈 Profiling enabled: trigger_pos=500, csv=/cache/profiling_runs/cublas_bf16/profiling_cublas_bf16.csv
+📁 Created CSV directory: /cache/profiling_runs/cublas_bf16
+📏 Actual model size being executed: 27.0 GB
+⚠️  Large model detected - monitoring for potential issues...
+💾 GPU memory should be sufficient for A100 (40GB+ available)
+🔧 Run command: ./llama2_cublas_bf16 llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 510 -t 1.0 -p 0.9 -s 42 -P 500 -R /cache/profiling_runs/cublas_bf16/profiling_cublas_bf16.csv
+
+🔬 Pre-execution environment check:
+   CUDA_VISIBLE_DEVICES: Not set
+   LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+   PATH: /usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin...
+   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-9253a27b-ab8e-a34f-cd27-04c8c8582d36)
+
+🔄 Execution Strategy #1: Standard execution with 96KB shared memory
+   Environment: {'CUDA_DEVICE_MAX_CONNECTIONS': '32'}
+   Command: ./llama2_cublas_bf16 llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 510 -t 1.0 -p 0.9 -s 42 -P 500 -R /cache/profiling_runs/cublas_bf16/profiling_cublas_bf16.csv
+   Timeout: 300s
+
+============================================================
+🤖 LLAMA2 CUDA OUTPUT (llama2_7b.bin) - Strategy 1:
+============================================================
+[bf16] Uploading weights to GPU as BF16...
+STDERR: GPU: NVIDIA A100-SXM4-40GB (CC 8.0, 39.5 GB)
+[bf16] Weights: ~500 MB FP32 -> ~12602 MB BF16 on GPU
+STDERR: Achieved tok/s: 63.41
+Once upon a time, this here well traveled author had an itch that needed scratching. I packed up the wife and kids and hit the road. I've never seen much of America. We are living vicariously through Youtube nowadays. We explored New Mexico, Colorado, Utah, Texas, and Arizona. We crossed The Grand Canyon on foot. We saw the Painted Desert, Four Corners, Chaco Canyon, Mesa Verde, the La Bajada road (Colorado), the San Luis valley (Colorado), the Raton pass, and so much more. We made it as far as Zion, Bryce, and the Grand Staircase Escalante national parks in Utah before the itch started to wear off. The pandemic was winding down and we were more than ready to return home.
+Enjoy these photos, but for the full experience please take a moment to enjoy some of the videos from our trip.
+We watched the Colorado River from the Grandview overlook, then took a short hike to the Arizona state line.
+This morning we crossed The Grand Canyon on foot. The return trip is much harder.
+We arrived at Zion National Park as the crowds cleared out.
+Zion is such a magical place.
+Bryce Canyon was next on our list.
+After spending a night in Escalante, Utah we made our way to the Grand Staircase Escalante National Monument.
+Before it closed due to the pandemic, Zion National Park was on track to have the busiest year in it's history. Escalante, Utah was a different story.
+Escalante is full of unique and interesting things to see.
+The San Juan river is full of the most beautiful scenes.
+We managed to find a camp site in Utah, and it was absolutely glorious.
+Heading home, we took a quick side trip to Canyonlands National Park.
+Our last stop was Monument Valley Navajo Tribal Park.
+Labels: family, road trip, travel
+Mom and Dad Go To Austin and I Find Out My Photos are for Sale
+Recently my Mom and Dad went to Austin. My father being an astute photographer knows how to
+=== BF16 MODEL BOTTLENECK ANALYSIS (Layer 0, pos=500) ===
+1. RMSNorm (attention):        0.013 ms
+2. QKV Projections:            0.115 ms
+3. RoPE + KV Cache:            0.015 ms
+4. Flash Attention:            0.101 ms
+5. Output Proj + Residual:     0.051 ms
+6. RMSNorm (FFN):              0.012 ms
+7. FFN W1+W3:                  0.154 ms
+8. SwiGLU + W2:                0.089 ms
+
+TOTAL LAYER TIME:        0.551 ms
+ESTIMATED 32-LAYER TIME: 17.6 ms = 56.7 tok/s
+Profiling metrics appended to /cache/profiling_runs/cublas_bf16/profiling_cublas_bf16.csv
+ make himself look important with a fancy camera.
+
+============================================================
+🔍 Process completed with return code: 0
+✅ Strategy 1 succeeded!
+🎉 CUDA Llama2 execution completed successfully with llama2_7b.bin!
