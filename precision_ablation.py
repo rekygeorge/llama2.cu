@@ -58,6 +58,7 @@ import argparse
 import csv
 import json
 import math
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -225,6 +226,11 @@ def extract_generation(raw, prompt):
             binary_output = after_header.strip()
     else:
         binary_output = raw  # Fallback: use full output
+
+    # sample_debug() in cublas/flash variants prints "Using argmax sampling -> token N\n"
+    # to stdout for every step, interleaving with story text.  Strip those lines now
+    # so all downstream strategies see clean story text.
+    binary_output = re.sub(r'Using argmax sampling -> token \d+\r?\n?', '', binary_output)
 
     def _strip_timing(text):
         """Strip trailing tok/s timing line from generated text."""

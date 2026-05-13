@@ -5862,7 +5862,8 @@ void generate_fused_optimized(Transformer *transformer, Tokenizer *tokenizer, Sa
     int token = prompt_tokens[0]; // kick off with the first token in the prompt
     int pos = 0; // position in the sequence
 #ifdef DUMP_LOGITS
-    int logit_dump_count = 0;
+    int logit_step = 0;       /* increments each time a logit vector is written */
+    int logit_dump_count = 0; /* increments each time a token ID is written (for JSON format) */
 #endif
     
     printf("Starting generation with token %d (\"%s\")\n", token, tokenizer->vocab[token]);
@@ -5884,11 +5885,12 @@ void generate_fused_optimized(Transformer *transformer, Tokenizer *tokenizer, Sa
         }
 #ifdef DUMP_LOGITS
         if (g_logit_bin_path[0] != '\0' && pos >= num_prompt_tokens - 1) {
-            FILE* _lf = fopen(g_logit_bin_path, logit_dump_count == 0 ? "wb" : "ab");
+            FILE* _lf = fopen(g_logit_bin_path, logit_step == 0 ? "wb" : "ab");
             if (_lf) {
                 fwrite(logits, sizeof(float), transformer->config.vocab_size, _lf);
                 fclose(_lf);
             }
+            logit_step++;
         }
 #endif
 

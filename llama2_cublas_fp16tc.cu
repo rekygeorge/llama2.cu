@@ -1272,7 +1272,8 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
     long long start = 0;
     int token = prompt_tokens[0], next, pos = 0;
 #ifdef DUMP_LOGITS
-    int logit_dump_count = 0;
+    int logit_step = 0;       /* increments each time a logit vector is written */
+    int logit_dump_count = 0; /* increments each time a token ID is written (for JSON format) */
 #endif
 
     while (pos < steps) {
@@ -1296,11 +1297,12 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
         }
 #ifdef DUMP_LOGITS
         if (g_logit_bin_path[0] != '\0' && pos >= num_prompt_tokens - 1) {
-            FILE* _lf = fopen(g_logit_bin_path, logit_dump_count == 0 ? "wb" : "ab");
+            FILE* _lf = fopen(g_logit_bin_path, logit_step == 0 ? "wb" : "ab");
             if (_lf) {
                 fwrite(gpu_logits, sizeof(float), p->vocab_size, _lf);
                 fclose(_lf);
             }
+            logit_step++;
         }
 #endif
 
