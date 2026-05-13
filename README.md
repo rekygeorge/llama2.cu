@@ -287,9 +287,7 @@ python precision_ablation.py --generations-file ./logit_dumps/generations.json
 python precision_ablation.py --mode logit-mse --logit-dir ./logit_dumps
 
 # Full metrics (token agreement + logit MSE + perplexity):
-python precision_ablation.py --mode all \
-    --logit-dir ./logit_dumps \
-    --token-ids-file ./logit_dumps/token_ids.json
+python precision_ablation.py --mode all --logit-dir ./logit_dumps --token-ids-file ./logit_dumps/token_ids.json
 
 # To run just for one variant 
 python precision_ablation.py --steps 200 --impls cublas --save-generations ./logit_dumps/generations.json

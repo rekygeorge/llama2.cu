@@ -45,6 +45,10 @@ static bool g_enable_profile = false;
 static bool g_profile_triggered = false;
 static int g_profile_pos = 10;
 static char g_profile_csv_path[512] = "tiled_profile_metrics.csv";
+#ifdef DUMP_LOGITS
+static char g_logit_bin_path[512] = "";  /* -L flag: full path for raw float32 logit dump */
+static char g_token_ids_path[512] = "";  /* -T flag: full path for generated token IDs JSON */
+#endif
 
 // Logging utilities
 void init_logging(const char* filename) {
@@ -2086,12 +2090,24 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
     int next;
     int token = prompt_tokens[0];
     int pos = 0;
+#ifdef DUMP_LOGITS
+    int logit_dump_count = 0;
+#endif
 
     printf("Starting generation with token %d (\"%s\")\n", token, tokenizer->vocab[token]);
     printf("Initial prompt tokens: %d\n", num_prompt_tokens);
 
     while (pos < steps) {
         float* logits = forward(transformer, token, pos);
+#ifdef DUMP_LOGITS
+        if (g_logit_bin_path[0] != '\0' && pos >= num_prompt_tokens - 1) {
+            FILE* _lf = fopen(g_logit_bin_path, logit_dump_count == 0 ? "wb" : "ab");
+            if (_lf) {
+                fwrite(logits, sizeof(float), transformer->config.vocab_size, _lf);
+                fclose(_lf);
+            }
+        }
+#endif
 
         // if (pos < 10) {
         //     printf("\nPrompt: \"%s\"\n", prompt);
@@ -2110,6 +2126,13 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
         } else {
             next = sample(sampler, logits);
         }
+#ifdef DUMP_LOGITS
+        if (g_token_ids_path[0] != '\0' && pos >= num_prompt_tokens - 1) {
+            FILE* _tf = fopen(g_token_ids_path, logit_dump_count == 0 ? "w" : "a");
+            if (_tf) { fprintf(_tf, logit_dump_count == 0 ? "[%d" : ",%d", next); fclose(_tf); }
+            logit_dump_count++;
+        }
+#endif
         pos++;
 
         if (next == 1) { printf(" <EOS>\n"); break; }
@@ -2128,6 +2151,12 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
         fprintf(stderr, "Achieved tok/s: %.2f\n", (pos-1) / (double)(end-start) * 1000);
         printf("Achieved tok/s: %.2f\n", (pos-1) / (double)(end-start) * 1000);  // Also print to stdout for console visibility
     }
+#ifdef DUMP_LOGITS
+    if (g_token_ids_path[0] != '\0' && logit_dump_count > 0) {
+        FILE* _tf = fopen(g_token_ids_path, "a");
+        if (_tf) { fprintf(_tf, "]"); fclose(_tf); }
+    }
+#endif
 
     free(prompt_tokens);
 }
@@ -2237,6 +2266,16 @@ int main(int argc, char *argv[]) {
             strncpy(g_profile_csv_path, argv[i + 1], sizeof(g_profile_csv_path) - 1);
             g_profile_csv_path[sizeof(g_profile_csv_path) - 1] = '\0';
         }
+#ifdef DUMP_LOGITS
+        else if (argv[i][1] == 'L') {
+            strncpy(g_logit_bin_path, argv[i + 1], sizeof(g_logit_bin_path) - 1);
+            g_logit_bin_path[sizeof(g_logit_bin_path) - 1] = '\0';
+        }
+        else if (argv[i][1] == 'T') {
+            strncpy(g_token_ids_path, argv[i + 1], sizeof(g_token_ids_path) - 1);
+            g_token_ids_path[sizeof(g_token_ids_path) - 1] = '\0';
+        }
+#endif
         else { error_usage(); }
     }
 

@@ -123,6 +123,74 @@ def run_modal_greedy(impl, steps, prompt, seed, model, modal_cmd="modal"):
     return result.stdout
 
 
+def run_modal_with_logit_dump(impl, steps, prompt, seed, model, logit_dir, modal_cmd="modal"):
+    """Trigger a Modal run with -DDUMP_LOGITS and download the logit dump file.
+
+    Writes <logit_dir>/<impl>.bin (raw float32 logit vectors, one per generation
+    step) and, for the cublas baseline, <logit_dir>/cublas_token_ids.json.
+    Returns True on success.
+    """
+    logit_dir = Path(logit_dir)
+    cmd = [
+        modal_cmd, "run", "modal_app.py",
+        "--cuda-impl",   impl,
+        "--model",       model,
+        "--prompt",      prompt,
+        "--steps",       str(steps),
+        "--temperature", "0.0",
+        "--seed",        str(seed),
+        "--dump-logits",
+    ]
+    print(f"  [{impl}] running logit dump ({steps} greedy steps) ...", flush=True)
+    import os
+    child_env = os.environ.copy()
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["PYTHONUTF8"] = "1"
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            env=child_env, timeout=1200
+        )
+    except subprocess.TimeoutExpired:
+        print(f"  [{impl}] dump TIMEOUT after 1200 s", file=sys.stderr)
+        return False
+    if result.returncode != 0:
+        print(f"  [{impl}] dump failed (exit {result.returncode})", file=sys.stderr)
+        print(result.stderr[-1000:], file=sys.stderr)
+        return False
+
+    # Download from Modal volume directly to logit_dir
+    logit_dir.mkdir(parents=True, exist_ok=True)
+    local_bin = logit_dir / f"{impl}.bin"
+    dl = subprocess.run(
+        [modal_cmd, "volume", "get", "--force", "huggingface-cache",
+         f"logit_dumps/{impl}.bin", str(local_bin)],
+        capture_output=True, text=True
+    )
+    if dl.returncode != 0:
+        print(f"  [{impl}] WARNING: could not download {impl}.bin from volume:",
+              file=sys.stderr)
+        print(f"           {dl.stderr.strip()}", file=sys.stderr)
+        return False
+    print(f"  [{impl}] logit dump saved -> {local_bin}")
+
+    # Baseline: also download token IDs for perplexity
+    if impl == "cublas":
+        local_ids = logit_dir / "cublas_token_ids.json"
+        dl2 = subprocess.run(
+            [modal_cmd, "volume", "get", "--force", "huggingface-cache",
+             "logit_dumps/cublas_token_ids.json", str(local_ids)],
+            capture_output=True, text=True
+        )
+        if dl2.returncode == 0:
+            print(f"  [cublas] token IDs saved -> {local_ids}")
+        else:
+            print(f"  [cublas] WARNING: token IDs download failed: {dl2.stderr.strip()}",
+                  file=sys.stderr)
+    return True
+
+
 def extract_generation(raw, prompt):
     """Extract the model-generated continuation from Modal stdout.
 
@@ -358,6 +426,11 @@ def main():
              "(required for --mode logit-mse / perplexity / all)",
     )
     ap.add_argument(
+        "--auto-dump-logits", action="store_true", default=False,
+        help="Auto-trigger Modal dump runs for missing logit files "
+             "(requires -DDUMP_LOGITS support in CUDA sources; default: off).",
+    )
+    ap.add_argument(
         "--token-ids-file", type=Path, default=None,
         help="JSON file with ground-truth next-token IDs for perplexity "
              "(list of ints, length = steps). Produced by the FP32 baseline "
@@ -383,12 +456,17 @@ def main():
     do_ppl   = args.mode in ("perplexity", "all")
 
     if (do_logit or do_ppl) and args.logit_dir is None:
-        ap.error(
-            "--logit-dir is required for logit-mse / perplexity modes.\n"
-            "Generate logit dumps by compiling the CUDA binary with -DDUMP_LOGITS\n"
-            "and passing -L <output_dir> at runtime.\n"
-            "See docs/research_directions.md Part 3 Step 3b for details."
-        )
+        if args.auto_dump_logits:
+            args.logit_dir = Path("./logit_dumps")
+            print(f"  --logit-dir not set; will use {args.logit_dir} (auto-created)")
+        else:
+            ap.error(
+                "--logit-dir is required for logit-mse / perplexity modes.\n"
+                "Pass --auto-dump-logits to generate logit dumps automatically,\n"
+                "or generate manually: compile CUDA binary with -DDUMP_LOGITS\n"
+                "and run with -L <output_dir>.\n"
+                "See docs/precision_ablation.md for details."
+            )
 
     # ── 1. Token-agreement ────────────────────────────────────────────────────
     generations = {}
@@ -432,6 +510,14 @@ def main():
             sys.exit(1)
         for impl in args.impls:
             p = find_logit_file(args.logit_dir, impl)
+            if p is None and getattr(args, "auto_dump_logits", False):
+                print(f"  [{impl}] logit file missing — triggering dump run ...")
+                ok = run_modal_with_logit_dump(
+                    impl, args.steps, args.prompt, args.seed,
+                    args.model, args.logit_dir, args.modal_cmd,
+                )
+                if ok:
+                    p = find_logit_file(args.logit_dir, impl)
             if p:
                 print(f"Loading logits [{impl}]: {p}")
                 logit_data[impl] = load_logits(p)
@@ -440,8 +526,15 @@ def main():
 
     token_ids = None
     if do_ppl:
-        if args.token_ids_file and args.token_ids_file.exists():
-            with open(args.token_ids_file) as f:
+        token_ids_path = args.token_ids_file
+        # Auto-detect: if cublas ran a dump, cublas_token_ids.json is in logit_dir
+        if (token_ids_path is None or not token_ids_path.exists()) and args.logit_dir:
+            candidate = args.logit_dir / "cublas_token_ids.json"
+            if candidate.exists():
+                token_ids_path = candidate
+                print(f"Auto-detected token IDs: {token_ids_path}")
+        if token_ids_path and token_ids_path.exists():
+            with open(token_ids_path) as f:
                 token_ids = json.load(f)
             print(f"Loaded {len(token_ids)} ground-truth token IDs")
         else:

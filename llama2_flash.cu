@@ -68,6 +68,10 @@ static bool g_enable_profile = false;
 static bool g_profile_triggered = false;
 static int g_profile_pos = 10;
 static char g_profile_csv_path[512] = "flash_profile_metrics.csv";
+#ifdef DUMP_LOGITS
+static char g_logit_bin_path[512] = "";  /* -L flag: full path for raw float32 logit dump */
+static char g_token_ids_path[512] = "";  /* -T flag: full path for generated token IDs JSON */
+#endif
 
 // Global cuBLAS handle (initialize once at program start)
 cublasHandle_t cublas_handle;
@@ -5758,6 +5762,9 @@ void generate_fused_optimized(Transformer *transformer, Tokenizer *tokenizer, Sa
     int next;
     int token = prompt_tokens[0]; // kick off with the first token in the prompt
     int pos = 0; // position in the sequence
+#ifdef DUMP_LOGITS
+    int logit_dump_count = 0;
+#endif
     
     printf("Starting generation with token %d (\"%s\")\n", token, tokenizer->vocab[token]);
     printf("Initial prompt tokens: %d\n", num_prompt_tokens);
@@ -5776,6 +5783,15 @@ void generate_fused_optimized(Transformer *transformer, Tokenizer *tokenizer, Sa
             printf("CUDA not available, falling back to CPU...\n");
             logits = forward_fixed(transformer, token, pos);      // ← Falls back to CPU
         }
+#ifdef DUMP_LOGITS
+        if (g_logit_bin_path[0] != '\0' && pos >= num_prompt_tokens - 1) {
+            FILE* _lf = fopen(g_logit_bin_path, logit_dump_count == 0 ? "wb" : "ab");
+            if (_lf) {
+                fwrite(logits, sizeof(float), transformer->config.vocab_size, _lf);
+                fclose(_lf);
+            }
+        }
+#endif
 
         
         // Advance the state machine
@@ -5788,6 +5804,13 @@ void generate_fused_optimized(Transformer *transformer, Tokenizer *tokenizer, Sa
             next = sample_debug(sampler, logits);
             // printf("Generated[%d]: %d (\"%s\")", pos, next, tokenizer->vocab[next]);
         }
+#ifdef DUMP_LOGITS
+        if (g_token_ids_path[0] != '\0' && pos >= num_prompt_tokens - 1) {
+            FILE* _tf = fopen(g_token_ids_path, logit_dump_count == 0 ? "w" : "a");
+            if (_tf) { fprintf(_tf, logit_dump_count == 0 ? "[%d" : ",%d", next); fclose(_tf); }
+            logit_dump_count++;
+        }
+#endif
         pos++;
         
         // Data-dependent terminating condition: we have hit EOS
@@ -5816,6 +5839,12 @@ void generate_fused_optimized(Transformer *transformer, Tokenizer *tokenizer, Sa
         printf("Achieved tok/s: %.2f\n", (pos-1) / (double)(end-start) * 1000);  // Also print to stdout for console visibility
     
     }
+#ifdef DUMP_LOGITS
+    if (g_token_ids_path[0] != '\0' && logit_dump_count > 0) {
+        FILE* _tf = fopen(g_token_ids_path, "a");
+        if (_tf) { fprintf(_tf, "]"); fclose(_tf); }
+    }
+#endif
 
     
     free(prompt_tokens);
@@ -6012,6 +6041,16 @@ int main(int argc, char *argv[]) {
             strncpy(g_profile_csv_path, argv[i + 1], sizeof(g_profile_csv_path) - 1);
             g_profile_csv_path[sizeof(g_profile_csv_path) - 1] = '\0';
         }
+#ifdef DUMP_LOGITS
+        else if (argv[i][1] == 'L') {
+            strncpy(g_logit_bin_path, argv[i + 1], sizeof(g_logit_bin_path) - 1);
+            g_logit_bin_path[sizeof(g_logit_bin_path) - 1] = '\0';
+        }
+        else if (argv[i][1] == 'T') {
+            strncpy(g_token_ids_path, argv[i + 1], sizeof(g_token_ids_path) - 1);
+            g_token_ids_path[sizeof(g_token_ids_path) - 1] = '\0';
+        }
+#endif
         else { error_usage(); }
     }
 

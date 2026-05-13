@@ -427,7 +427,9 @@ def compile_and_run_cuda_small(
     cuda_impl: str = "cublas",
     profile_enable: bool = False,
     profile_pos: int = 10,
-    profile_csv: str = "/cache/flash_profile_metrics.csv"
+    profile_csv: str = "/cache/flash_profile_metrics.csv",
+    dump_logits: bool = False,
+    logit_dump_dir: str = "/cache/logit_dumps"
 ):
     """Optimized function for small models (< 1GB)."""
     return _compile_and_run_cuda_impl(
@@ -444,6 +446,8 @@ def compile_and_run_cuda_small(
         profile_enable,
         profile_pos,
         profile_csv,
+        dump_logits,
+        logit_dump_dir,
     )
 
 @app.function(
@@ -467,7 +471,9 @@ def compile_and_run_cuda_large(
     cuda_impl: str = "cublas",
     profile_enable: bool = False,
     profile_pos: int = 10,
-    profile_csv: str = "/cache/flash_profile_metrics.csv"
+    profile_csv: str = "/cache/flash_profile_metrics.csv",
+    dump_logits: bool = False,
+    logit_dump_dir: str = "/cache/logit_dumps"
 ):
     """Optimized function for large models (> 1GB)."""
     return _compile_and_run_cuda_impl(
@@ -484,6 +490,8 @@ def compile_and_run_cuda_large(
         profile_enable,
         profile_pos,
         profile_csv,
+        dump_logits,
+        logit_dump_dir,
     )
 
 def _compile_and_run_cuda_impl(
@@ -499,7 +507,9 @@ def _compile_and_run_cuda_impl(
     cuda_impl: str = "cublas",
     profile_enable: bool = False,
     profile_pos: int = 10,
-    profile_csv: str = "/cache/flash_profile_metrics.csv"
+    profile_csv: str = "/cache/flash_profile_metrics.csv",
+    dump_logits: bool = False,
+    logit_dump_dir: str = "/cache/logit_dumps"
 ):
     """
     Compile and run the CUDA Llama2 implementation with S3 model download support.
@@ -829,6 +839,10 @@ def _compile_and_run_cuda_impl(
             "-Xptxas", "-O3",       # Additional PTX assembler optimization
         ])
     
+    if dump_logits:
+        compile_cmd.append("-DDUMP_LOGITS")
+        log_and_capture(f"📊 Logit dump mode: compiling with -DDUMP_LOGITS")
+    
     # Add output file and source
     compile_cmd.extend([
         "-o", binary_name,           # Output executable name
@@ -963,6 +977,14 @@ def _compile_and_run_cuda_impl(
             log_and_capture("ℹ️  cublas_fp16: passing -P and -R for bottleneck analysis and CSV output.")
         else:
             run_cmd.extend(["-P", str(profile_pos), "-R", profile_csv])
+    
+    if dump_logits:
+        os.makedirs(logit_dump_dir, exist_ok=True)
+        logit_bin = f"{logit_dump_dir}/{cuda_impl_key}.bin"
+        run_cmd.extend(["-L", logit_bin])
+        if cuda_impl_key == "cublas":
+            run_cmd.extend(["-T", f"{logit_dump_dir}/cublas_token_ids.json"])
+        log_and_capture(f"📊 Logit dump: output -> {logit_bin}")
     
     log_and_capture(f"🔧 Run command: {' '.join(run_cmd)}")
     
@@ -1558,7 +1580,9 @@ def main(
     profile_enable: bool = False,
     profile_pos: int = 10,
     profile_csv: str = "/cache/flash_profile_metrics.csv",
-    download_dir: str = "."
+    download_dir: str = ".",
+    dump_logits: bool = False,
+    logit_dump_dir: str = "/cache/logit_dumps"
 ):
     """
     Main entry point for the Modal CUDA Llama2 application with S3 support.
@@ -1688,6 +1712,8 @@ def main(
             profile_enable=profile_enable,
             profile_pos=profile_pos,
             profile_csv=profile_csv,
+            dump_logits=dump_logits,
+            logit_dump_dir=logit_dump_dir,
         )
     else:
         print(f"📦 Using small model function for {model}")
@@ -1705,6 +1731,8 @@ def main(
             profile_enable=profile_enable,
             profile_pos=profile_pos,
             profile_csv=profile_csv,
+            dump_logits=dump_logits,
+            logit_dump_dir=logit_dump_dir,
         )
     
     if success:
@@ -1720,6 +1748,18 @@ def main(
             profile_remote_path = profile_remote_path.lstrip("/")
             if profile_remote_path:
                 artifacts_to_download.append(profile_remote_path)
+        if dump_logits:
+            # Strip /cache/ prefix to get volume-relative path for modal volume get
+            if logit_dump_dir.startswith("/cache/"):
+                logit_remote = logit_dump_dir[len("/cache/"):] + f"/{cuda_impl_key}.bin"
+            elif logit_dump_dir.startswith("/cache"):
+                logit_remote = logit_dump_dir[len("/cache"):].lstrip("/") + f"/{cuda_impl_key}.bin"
+            else:
+                logit_remote = f"logit_dumps/{cuda_impl_key}.bin"
+            artifacts_to_download.append(logit_remote)
+            if cuda_impl_key == "cublas":
+                token_ids_remote = logit_remote.replace(f"/{cuda_impl_key}.bin", "/cublas_token_ids.json")
+                artifacts_to_download.append(token_ids_remote)
 
         if artifacts_to_download:
             print("📥 Downloading profiling artifacts to local machine...")

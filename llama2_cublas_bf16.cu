@@ -73,6 +73,10 @@ static bool g_enable_profile    = false;
 static bool g_profile_triggered = false;
 static int  g_profile_pos       = 10;
 static char g_profile_csv_path[512] = "cublas_bf16_profile_metrics.csv";
+#ifdef DUMP_LOGITS
+static char g_logit_bin_path[512] = "";  /* -L flag: full path for raw float32 logit dump */
+static char g_token_ids_path[512] = "";  /* -T flag: full path for generated token IDs JSON */
+#endif
 
 static void append_profile_metrics_csv(
     int token, int pos, int dim, int hidden_dim, int n_heads, int n_kv_heads,
@@ -1229,6 +1233,9 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
 
     long long start = 0;
     int token = prompt_tokens[0], next, pos = 0;
+#ifdef DUMP_LOGITS
+    int logit_dump_count = 0;
+#endif
 
     while (pos < steps) {
         float* gpu_logits = forward_gpu(t, token, pos);
@@ -1249,11 +1256,27 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
         }
 
         /* Sampling uses the GPU logits directly (softmax modifies in-place) */
+#ifdef DUMP_LOGITS
+        if (g_logit_bin_path[0] != '\0' && pos >= num_prompt_tokens - 1) {
+            FILE* _lf = fopen(g_logit_bin_path, logit_dump_count == 0 ? "wb" : "ab");
+            if (_lf) {
+                fwrite(gpu_logits, sizeof(float), p->vocab_size, _lf);
+                fclose(_lf);
+            }
+        }
+#endif
         if (pos < num_prompt_tokens - 1)
             next = prompt_tokens[pos + 1];
         else
             next = do_sample(sampler, gpu_logits);
         pos++;
+#ifdef DUMP_LOGITS
+        if (g_token_ids_path[0] != '\0' && (pos - 1) >= num_prompt_tokens - 1) {
+            FILE* _tf = fopen(g_token_ids_path, logit_dump_count == 0 ? "w" : "a");
+            if (_tf) { fprintf(_tf, logit_dump_count == 0 ? "[%d" : ",%d", next); fclose(_tf); }
+            logit_dump_count++;
+        }
+#endif
 
         if (next == 2) { printf("\n"); break; }
 
@@ -1274,6 +1297,12 @@ static void generate(Transformer* t, Tokenizer* tok, Sampler* sampler,
 
     free(prompt_tokens);
     if (gpu_logits_copy) free(gpu_logits_copy);
+#ifdef DUMP_LOGITS
+    if (g_token_ids_path[0] != '\0' && logit_dump_count > 0) {
+        FILE* _tf = fopen(g_token_ids_path, "a");
+        if (_tf) { fprintf(_tf, "]"); fclose(_tf); }
+    }
+#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -1325,6 +1354,16 @@ int main(int argc, char* argv[]) {
                 strncpy(g_profile_csv_path, argv[++i], sizeof(g_profile_csv_path) - 1);
                 g_profile_csv_path[sizeof(g_profile_csv_path) - 1] = '\0';
             }
+#ifdef DUMP_LOGITS
+            else if (strcmp(argv[i], "-L") == 0) {
+                strncpy(g_logit_bin_path, argv[++i], sizeof(g_logit_bin_path) - 1);
+                g_logit_bin_path[sizeof(g_logit_bin_path) - 1] = '\0';
+            }
+            else if (strcmp(argv[i], "-T") == 0) {
+                strncpy(g_token_ids_path, argv[++i], sizeof(g_token_ids_path) - 1);
+                g_token_ids_path[sizeof(g_token_ids_path) - 1] = '\0';
+            }
+#endif
             else error_usage();
         } else { error_usage(); }
     }
