@@ -160,33 +160,37 @@ def run_modal_with_logit_dump(impl, steps, prompt, seed, model, logit_dir, modal
         print(result.stderr[-1000:], file=sys.stderr)
         return False
 
-    # Download from Modal volume directly to logit_dir
+    # modal_app.py's local entrypoint already downloads the logit bin to
+    # ./logit_dumps/<impl>.bin (default download_dir=".", remote="logit_dumps/<impl>.bin").
+    # Check both the requested logit_dir and the fixed default location.
     logit_dir.mkdir(parents=True, exist_ok=True)
     local_bin = logit_dir / f"{impl}.bin"
-    dl = subprocess.run(
-        [modal_cmd, "volume", "get", "--force", "huggingface-cache",
-         f"logit_dumps/{impl}.bin", str(local_bin)],
-        capture_output=True, text=True
-    )
-    if dl.returncode != 0:
-        print(f"  [{impl}] WARNING: could not download {impl}.bin from volume:",
+    if not local_bin.exists():
+        # Fallback: modal run deposited it at ./logit_dumps/<impl>.bin
+        alt = Path("logit_dumps") / f"{impl}.bin"
+        if alt.exists() and alt.resolve() != local_bin.resolve():
+            import shutil
+            shutil.copy2(alt, local_bin)
+    if local_bin.exists():
+        print(f"  [{impl}] logit dump saved -> {local_bin}")
+    else:
+        print(f"  [{impl}] WARNING: dump run succeeded but {local_bin} not found.",
               file=sys.stderr)
-        print(f"           {dl.stderr.strip()}", file=sys.stderr)
+        print(f"           Check that modal_app.py downloaded to ./logit_dumps/.",
+              file=sys.stderr)
         return False
-    print(f"  [{impl}] logit dump saved -> {local_bin}")
 
-    # Baseline: also download token IDs for perplexity
     if impl == "cublas":
         local_ids = logit_dir / "cublas_token_ids.json"
-        dl2 = subprocess.run(
-            [modal_cmd, "volume", "get", "--force", "huggingface-cache",
-             "logit_dumps/cublas_token_ids.json", str(local_ids)],
-            capture_output=True, text=True
-        )
-        if dl2.returncode == 0:
+        if not local_ids.exists():
+            alt_ids = Path("logit_dumps") / "cublas_token_ids.json"
+            if alt_ids.exists() and alt_ids.resolve() != local_ids.resolve():
+                import shutil
+                shutil.copy2(alt_ids, local_ids)
+        if local_ids.exists():
             print(f"  [cublas] token IDs saved -> {local_ids}")
         else:
-            print(f"  [cublas] WARNING: token IDs download failed: {dl2.stderr.strip()}",
+            print(f"  [cublas] WARNING: token IDs not found at {local_ids}",
                   file=sys.stderr)
     return True
 
@@ -222,26 +226,48 @@ def extract_generation(raw, prompt):
     else:
         binary_output = raw  # Fallback: use full output
 
-    # Find the prompt inside the binary output
+    def _strip_timing(text):
+        """Strip trailing tok/s timing line from generated text."""
+        for marker in ("tok/s", "achieved", "tokens/s"):
+            m = text.rfind(marker)
+            if m > 0:
+                ls = text.rfind("\n", 0, m)
+                text = text[:ls] if ls >= 0 else text[:m]
+                break
+        return text.strip()
+
     probe = prompt[:30]
-    idx = binary_output.find(probe)
-    if idx >= 0:
-        after = binary_output[idx + len(prompt):]
-    else:
-        # Prompt not found: return all non-timing lines
-        lines = [l for l in binary_output.split("\n")
-                 if l.strip() and not any(m in l for m in ("tok/s", "achieved", "tokens/s"))]
-        return "\n".join(lines).strip()
 
-    # Strip trailing timing line (e.g. "\nachieved 31.06 tok/s\n")
-    for marker in ("tok/s", "achieved", "tokens/s"):
-        m = after.rfind(marker)
-        if m > 0:
-            line_start = after.rfind("\n", 0, m)
-            after = after[:line_start] if line_start >= 0 else after[:m]
+    # Strategy 1: cublas/flash/tiled print "Initial prompt tokens: N" immediately
+    # before the generated text begins.  Find that line and take everything after
+    # it — this skips the debug preamble (tokenizer debug, model loading, etc.)
+    # which also contains the prompt inside quoted strings like:
+    #   Input text: "Once upon a time"
+    ipt_idx = binary_output.find("Initial prompt tokens:")
+    if ipt_idx >= 0:
+        line_end = binary_output.find("\n", ipt_idx)
+        story_region = binary_output[line_end + 1:] if line_end >= 0 else binary_output[ipt_idx:]
+        pi = story_region.find(probe)
+        if pi >= 0:
+            return _strip_timing(story_region[pi + len(prompt):])
+
+    # Strategy 2: fp16/bf16/fp16tc — all CUDA init goes to stderr so
+    # binary_output IS just the generated text.  Find the prompt not preceded
+    # by a quote (avoids hitting debug lines like:  Input text: "Once upon a time").
+    start = 0
+    while True:
+        idx = binary_output.find(probe, start)
+        if idx < 0:
             break
+        if idx > 0 and binary_output[idx - 1] == '"':
+            start = idx + 1
+            continue
+        return _strip_timing(binary_output[idx + len(prompt):])
 
-    return after.strip()
+    # Fallback: return non-timing lines
+    lines = [l for l in binary_output.split("\n")
+             if l.strip() and not any(m in l for m in ("tok/s", "achieved", "tokens/s"))]
+    return "\n".join(lines).strip()
 
 
 # ── Token-agreement metrics ────────────────────────────────────────────────────
