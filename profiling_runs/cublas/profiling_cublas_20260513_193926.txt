@@ -1,0 +1,1081 @@
+================================================================================
+CUDA LLAMA2 EXECUTION SUMMARY
+================================================================================
+Timestamp: 2026-05-14 02:43:12 UTC
+Model: llama2_7b.bin
+Prompt: Once upon a time
+Steps: 200
+Temperature: 0.0
+Top-p: 0.9
+Seed: 42
+Execution Time: 218.61 seconds
+================================================================================
+
+EXECUTION LOG:
+
+🕐 Execution started: 2026-05-14 02:39:33 UTC
+🚀 Starting CUDA Llama2 compilation and execution with S3 support...
+📂 Working directory: /app
+🤖 Selected model: llama2_7b.bin
+🧩 CUDA implementation: cublas (llama2_cublas.cu)
+📊 Model info: 7B parameter model (large, high quality)
+📏 Expected size: 26.0 GB
+📁 Directory contents: ['plot_seq_sweep.py', 'README.md', 'llama2.c', '__pycache__', 'precision_ablation.py', 'llama2_cublas.cu', 'profiling_cublas_fp16.csv', 'llama2_cublas_fp16.cu', 'Tests', 'profiling_cublas.txt', 'win.c', 'llama2_cublas_bf16.cu', '.env', 'llama2_cublas_fp16tc', 'win.h', 'llama2_cublas_bf16', 'profiling_flash.txt', 'tokenizer.model', 'investigate_fp16tc_eos.py', 'llama2_flash.cu', 'profiling_cublas.csv', 'modal_app.py', 'profiling.txt', 'tokenizer.bin', '.git', 'run_profiling_experiment.sh', 'profiling_flash.csv', 'stories15M.bin', 'llama2_tiled.cu', 'Makefile', 'vllm_inference.py', 'llama2_cublas_fp16tc.cu', 'profile_stats.py', 'docs', 'roofline.py', 'profiling_runs', 'logit_dumps', 'profiling_tiled.csv', 'llama2_cublas_fp16.c', 'profiling_cublas_fp16.txt', '.gitignore', 'llama2_tiled_backup.cu', 'gens_v2.json']
+
+🔍 Verifying CUDA installation...
+✅ CUDA Compiler: nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Jan_15_19:20:09_PST_2025
+Cuda compilation tools, release 12.8, V12.8.61
+Build cuda_12.8.r12.8/compiler.35404655_0
+✅ GPU Status:
+Thu May 14 02:39:34 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:00:0A.0 Off |                    0 |
+| N/A   33C    P0             55W /  400W |       0MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+🎯 GPU Details:
+   Name: NVIDIA A100-SXM4-40GB
+   Compute Capability: 8.0
+   Driver Version: 580.95.05
+   Total Memory: 40960 MB
+🔧 CUDA Toolkit: Cuda compilation tools, release 12.8, V12.8.61
+✅ All required source files found
+
+📥 Checking model and tokenizer files...
+📦 Model will be downloaded from S3: llama2_7b.bin
+✅ tokenizer.bin already exists
+
+🔍 Final file validation...
+🔍 Validating model file format...
+📄 Model file header (first 32 bytes): 00100000002b00002000000020000000
+🔮 Magic number: 4096 (0x00001000)
+⚠️  Unknown model format, magic: 00100000002b0000
+✅ All files validated successfully
+
+🔨 Compiling CUDA code...
+🔧 Configuring CUDA shared memory to 96KB per block...
+🔍 Auto-detected GPU compute capability: 8.0 -> sm_80
+🎯 Detected GPU type: A100, using CUDA architecture: sm_80
+⚡ A100 detected: Adding tensor core and advanced optimization flags
+🔧 Compilation command: nvcc -O3 -arch=sm_80 -std=c++17 --use_fast_math --ptxas-options=-v -maxrregcount=64 -Xptxas -maxrregcount=64 -Xptxas --opt-level=3 --default-stream per-thread -DMAX_SHARED_MEMORY_PER_BLOCK=98304 -DUSE_TENSOR_CORES -Xptxas -O3 -o llama2_cublas llama2_cublas.cu -lcudart -lcublas
+✅ CUDA compilation successful!
+⚠️  Compiler warnings: llama2_cublas.cu(578): warning #177-D: variable "warpId" was declared but never referenced
+      int warpId = tid / 32;
+          ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+llama2_cublas.cu(579): warning #177-D: variable "laneId" was declared but never referenced
+      int laneId = tid % 32;
+          ^
+
+llama2_cublas.cu(1523): warning #177-D: variable "temp_results" was declared but never referenced
+      float* temp_results = weight_cache + cache_size;
+             ^
+
+llama2_cublas.cu(1779): warning #177-D: variable "output_buffer" was declared but never referenced
+      float* output_buffer = weight_tile + 8192;
+             ^
+
+llama2_cublas.cu(3651): warning #177-D: variable "layer_wo" was declared but never referenced
+      float* layer_wo = w->d_wo + l * dim * dim;
+             ^
+
+llama2_cublas.cu(3814): warning #550-D: variable "max_shared_mem" was set but never used
+      size_t max_shared_mem = 48 * 1024;
+             ^
+
+llama2_cublas.cu(3832): warning #177-D: variable "err" was declared but never referenced
+      cudaError_t err;
+                  ^
+
+llama2_cublas.cu(5598): warning #177-D: variable "layer_wo" was declared but never referenced
+          float* layer_wo = w->d_wo + l * dim * dim;
+                 ^
+
+ptxas info    : Overriding maximum register limit 256 for '_Z35output_projection_rtx2070_optimizedPKfS0_Pfif' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z32output_projection_a100_optimizedPKfS0_Pfif' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z32rmsnorm_kernel_rtx2070_optimizedPfPKfS1_if' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z29rmsnorm_kernel_a100_optimizedPfPKfS1_if' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z30fused_swiglu_w2_chunked_kernelPKfS0_S0_Pfiiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z22fused_swiglu_w2_kernelPKfS0_S0_Pfiiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z29ffn_w1w3_a100_ultra_optimizedPKfS0_S0_PfS1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z32memory_optimized_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z24improved_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z31fused_ffn_w1w3_optimized_kernelPKfS0_S0_PfS1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z29fused_ffn_w1w3_chunked_kernelPKfS0_S0_PfS1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z21fused_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z28fused_output_residual_kernelPKfS0_Pfif' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z32multi_head_flashattention_kernelPKfS0_S0_Pfiiiiifi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z34single_query_flashattention_kernelPKfS0_S0_Pfiiiif' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z26qkv_kernel_multiblock_a100PKfS0_S0_S0_PfS1_S1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z28qkv_kernel_rtx2070_optimizedPKfS0_S0_S0_PfS1_S1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z25qkv_kernel_a100_optimizedPKfS0_S0_S0_PfS1_S1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z16fused_qkv_kernelPKfS0_S0_S0_PfS1_S1_iiff' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z11rope_kernelPfS_iiiii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z28flash_attention_kernel_fixedPfS_S_S_iiiiif' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z14softmax_kernelPfS_i' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z23swiglu_kernel_cublas_v2PfS_S_i' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z13swiglu_kernelPfS_i' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z14rmsnorm_kernelPfS_S_if' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z12saxpy_kernelPfPKffi' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z12sgemv_kernelPfPKfS1_iiffb' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z29matmul_kernel_double_bufferedPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z29matmul_kernel_optimized_fixedPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z25matmul_kernel_simple_fastPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z26matmul_kernel_large_sharedPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z22matmul_kernel_2d_tiledPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z25matmul_kernel_2d_ultimatePfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z31matmul_kernel_2d_warp_optimizedPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z31matmul_kernel_2d_optimized_4096PfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z27matmul_kernel_2d_vectorizedPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z25matmul_kernel_2d_improvedPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z23matmul_kernel_optimizedPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z23matmul_kernel_coarsenedPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z19matmul_kernel_tiledPfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z20matmul_kernel_simplePfS_S_ii' with  64 of maxrregcount option
+ptxas info    : Overriding maximum register limit 256 for '_Z22elementwise_add_kernelPfS_i' with  64 of maxrregcount option
+ptxas info    : 3 bytes gmem, 24 bytes cmem[4]
+ptxas info    : Compiling entry function '_Z35output_projection_rtx2070_optimizedPKfS0_Pfif' for 'sm_80'
+ptxas info    : Function properties for _Z35output_projection_rtx2070_optimizedPKfS0_Pfif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 384 bytes cmem[0]
+ptxas info    : Compile time = 22.366 ms
+ptxas info    : Compiling entry function '_Z32output_projection_a100_optimizedPKfS0_Pfif' for 'sm_80'
+ptxas info    : Function properties for _Z32output_projection_a100_optimizedPKfS0_Pfif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 384 bytes cmem[0]
+ptxas info    : Compile time = 28.379 ms
+ptxas info    : Compiling entry function '_Z32rmsnorm_kernel_rtx2070_optimizedPfPKfS1_if' for 'sm_80'
+ptxas info    : Function properties for _Z32rmsnorm_kernel_rtx2070_optimizedPfPKfS1_if
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 9.547 ms
+ptxas info    : Compiling entry function '_Z29rmsnorm_kernel_a100_optimizedPfPKfS1_if' for 'sm_80'
+ptxas info    : Function properties for _Z29rmsnorm_kernel_a100_optimizedPfPKfS1_if
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 22 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 29.149 ms
+ptxas info    : Compiling entry function '_Z30fused_swiglu_w2_chunked_kernelPKfS0_S0_Pfiiff' for 'sm_80'
+ptxas info    : Function properties for _Z30fused_swiglu_w2_chunked_kernelPKfS0_S0_Pfiiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers, 400 bytes cmem[0]
+ptxas info    : Compile time = 16.973 ms
+ptxas info    : Compiling entry function '_Z22fused_swiglu_w2_kernelPKfS0_S0_Pfiiff' for 'sm_80'
+ptxas info    : Function properties for _Z22fused_swiglu_w2_kernelPKfS0_S0_Pfiiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 400 bytes cmem[0]
+ptxas info    : Compile time = 17.215 ms
+ptxas info    : Compiling entry function '_Z29ffn_w1w3_a100_ultra_optimizedPKfS0_S0_PfS1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z29ffn_w1w3_a100_ultra_optimizedPKfS0_S0_PfS1_iiff
+    16 bytes stack frame, 12 bytes spill stores, 24 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 16 bytes cumulative stack size, 408 bytes cmem[0]
+ptxas info    : Compile time = 34.091 ms
+ptxas info    : Compiling entry function '_Z32memory_optimized_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z32memory_optimized_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 408 bytes cmem[0]
+ptxas info    : Compile time = 19.622 ms
+ptxas info    : Compiling entry function '_Z24improved_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z24improved_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 408 bytes cmem[0]
+ptxas info    : Compile time = 24.442 ms
+ptxas info    : Compiling entry function '_Z31fused_ffn_w1w3_optimized_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z31fused_ffn_w1w3_optimized_kernelPKfS0_S0_PfS1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 408 bytes cmem[0]
+ptxas info    : Compile time = 17.709 ms
+ptxas info    : Compiling entry function '_Z29fused_ffn_w1w3_chunked_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z29fused_ffn_w1w3_chunked_kernelPKfS0_S0_PfS1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 31 registers, used 1 barriers, 408 bytes cmem[0]
+ptxas info    : Compile time = 28.499 ms
+ptxas info    : Compiling entry function '_Z21fused_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z21fused_ffn_w1w3_kernelPKfS0_S0_PfS1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 1 barriers, 408 bytes cmem[0]
+ptxas info    : Compile time = 15.778 ms
+ptxas info    : Compiling entry function '_Z28fused_output_residual_kernelPKfS0_Pfif' for 'sm_80'
+ptxas info    : Function properties for _Z28fused_output_residual_kernelPKfS0_Pfif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 41 registers, used 1 barriers, 384 bytes cmem[0]
+ptxas info    : Compile time = 8.992 ms
+ptxas info    : Compiling entry function '_Z32multi_head_flashattention_kernelPKfS0_S0_Pfiiiiifi' for 'sm_80'
+ptxas info    : Function properties for _Z32multi_head_flashattention_kernelPKfS0_S0_Pfiiiiifi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 412 bytes cmem[0]
+ptxas info    : Compile time = 52.461 ms
+ptxas info    : Compiling entry function '_Z34single_query_flashattention_kernelPKfS0_S0_Pfiiiif' for 'sm_80'
+ptxas info    : Function properties for _Z34single_query_flashattention_kernelPKfS0_S0_Pfiiiif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 404 bytes cmem[0]
+ptxas info    : Compile time = 51.258 ms
+ptxas info    : Compiling entry function '_Z26qkv_kernel_multiblock_a100PKfS0_S0_S0_PfS1_S1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z26qkv_kernel_multiblock_a100PKfS0_S0_S0_PfS1_S1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 424 bytes cmem[0]
+ptxas info    : Compile time = 59.083 ms
+ptxas info    : Compiling entry function '_Z28qkv_kernel_rtx2070_optimizedPKfS0_S0_S0_PfS1_S1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z28qkv_kernel_rtx2070_optimizedPKfS0_S0_S0_PfS1_S1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 424 bytes cmem[0]
+ptxas info    : Compile time = 41.732 ms
+ptxas info    : Compiling entry function '_Z25qkv_kernel_a100_optimizedPKfS0_S0_S0_PfS1_S1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z25qkv_kernel_a100_optimizedPKfS0_S0_S0_PfS1_S1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 424 bytes cmem[0]
+ptxas info    : Compile time = 39.944 ms
+ptxas info    : Compiling entry function '_Z16fused_qkv_kernelPKfS0_S0_S0_PfS1_S1_iiff' for 'sm_80'
+ptxas info    : Function properties for _Z16fused_qkv_kernelPKfS0_S0_S0_PfS1_S1_iiff
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 1 barriers, 424 bytes cmem[0]
+ptxas info    : Compile time = 21.721 ms
+ptxas info    : Compiling entry function '_Z11rope_kernelPfS_iiiii' for 'sm_80'
+ptxas info    : Function properties for _Z11rope_kernelPfS_iiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 18 registers, used 0 barriers, 388 bytes cmem[0]
+ptxas info    : Compile time = 4.003 ms
+ptxas info    : Compiling entry function '_Z28flash_attention_kernel_fixedPfS_S_S_iiiiif' for 'sm_80'
+ptxas info    : Function properties for _Z28flash_attention_kernel_fixedPfS_S_S_iiiiif
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 1 barriers, 408 bytes cmem[0]
+ptxas info    : Compile time = 27.411 ms
+ptxas info    : Compiling entry function '_Z14softmax_kernelPfS_i' for 'sm_80'
+ptxas info    : Function properties for _Z14softmax_kernelPfS_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 1 barriers, 256 bytes smem, 372 bytes cmem[0]
+ptxas info    : Compile time = 12.057 ms
+ptxas info    : Compiling entry function '_Z23swiglu_kernel_cublas_v2PfS_S_i' for 'sm_80'
+ptxas info    : Function properties for _Z23swiglu_kernel_cublas_v2PfS_S_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers, 380 bytes cmem[0]
+ptxas info    : Compile time = 1.617 ms
+ptxas info    : Compiling entry function '_Z13swiglu_kernelPfS_i' for 'sm_80'
+ptxas info    : Function properties for _Z13swiglu_kernelPfS_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 1.404 ms
+ptxas info    : Compiling entry function '_Z14rmsnorm_kernelPfS_S_if' for 'sm_80'
+ptxas info    : Function properties for _Z14rmsnorm_kernelPfS_S_if
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 25 registers, used 1 barriers, 256 bytes smem, 384 bytes cmem[0], 8 bytes cmem[2]
+ptxas info    : Compile time = 14.903 ms
+ptxas info    : Compiling entry function '_Z12saxpy_kernelPfPKffi' for 'sm_80'
+ptxas info    : Function properties for _Z12saxpy_kernelPfPKffi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 376 bytes cmem[0]
+ptxas info    : Compile time = 1.368 ms
+ptxas info    : Compiling entry function '_Z12sgemv_kernelPfPKfS1_iiffb' for 'sm_80'
+ptxas info    : Function properties for _Z12sgemv_kernelPfPKfS1_iiffb
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 1 barriers, 393 bytes cmem[0]
+ptxas info    : Compile time = 11.283 ms
+ptxas info    : Compiling entry function '_Z29matmul_kernel_double_bufferedPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z29matmul_kernel_double_bufferedPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers, 512 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 10.994 ms
+ptxas info    : Compiling entry function '_Z29matmul_kernel_optimized_fixedPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z29matmul_kernel_optimized_fixedPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 47 registers, used 1 barriers, 1024 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 16.469 ms
+ptxas info    : Compiling entry function '_Z25matmul_kernel_simple_fastPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z25matmul_kernel_simple_fastPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 30 registers, used 1 barriers, 512 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 7.350 ms
+ptxas info    : Compiling entry function '_Z26matmul_kernel_large_sharedPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z26matmul_kernel_large_sharedPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 33 registers, used 1 barriers, 256 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 11.443 ms
+ptxas info    : Compiling entry function '_Z22matmul_kernel_2d_tiledPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z22matmul_kernel_2d_tiledPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 1024 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 9.657 ms
+ptxas info    : Compiling entry function '_Z25matmul_kernel_2d_ultimatePfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z25matmul_kernel_2d_ultimatePfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 512 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 31.911 ms
+ptxas info    : Compiling entry function '_Z31matmul_kernel_2d_warp_optimizedPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z31matmul_kernel_2d_warp_optimizedPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 36 registers, used 1 barriers, 256 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 8.379 ms
+ptxas info    : Compiling entry function '_Z31matmul_kernel_2d_optimized_4096PfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z31matmul_kernel_2d_optimized_4096PfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 43 registers, used 1 barriers, 256 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 9.747 ms
+ptxas info    : Compiling entry function '_Z27matmul_kernel_2d_vectorizedPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z27matmul_kernel_2d_vectorizedPfS_S_ii
+    24 bytes stack frame, 28 bytes spill stores, 32 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 24 bytes cumulative stack size, 128 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 35.715 ms
+ptxas info    : Compiling entry function '_Z25matmul_kernel_2d_improvedPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z25matmul_kernel_2d_improvedPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 30 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 7.990 ms
+ptxas info    : Compiling entry function '_Z23matmul_kernel_optimizedPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z23matmul_kernel_optimizedPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 33 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 11.796 ms
+ptxas info    : Compiling entry function '_Z23matmul_kernel_coarsenedPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z23matmul_kernel_coarsenedPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 47 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 19.178 ms
+ptxas info    : Compiling entry function '_Z19matmul_kernel_tiledPfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z19matmul_kernel_tiledPfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 128 bytes smem, 384 bytes cmem[0]
+ptxas info    : Compile time = 9.658 ms
+ptxas info    : Compiling entry function '_Z20matmul_kernel_simplePfS_S_ii' for 'sm_80'
+ptxas info    : Function properties for _Z20matmul_kernel_simplePfS_S_ii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers, 384 bytes cmem[0]
+ptxas info    : Compile time = 7.922 ms
+ptxas info    : Compiling entry function '_Z22elementwise_add_kernelPfS_i' for 'sm_80'
+ptxas info    : Function properties for _Z22elementwise_add_kernelPfS_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers, 372 bytes cmem[0]
+ptxas info    : Compile time = 1.445 ms
+
+✅ Executable created: /app/llama2_cublas
+📋 Executable info: /app/llama2_cublas: ELF 64-bit LSB pie executable, x86-64, version 1 (GNU/Linux), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=56aa83a1051323ec8019186462419819d9bc4f41, for GNU/Linux 3.2.0, not stripped
+📚 Library dependencies:
+   linux-vdso.so.1 (0x00002ad8e702f000)
+   libcudart.so.12 => /usr/local/cuda/lib64/libcudart.so.12 (0x00002ad8e7200000)
+   libcublas.so.12 => /usr/local/cuda/lib64/libcublas.so.12 (0x00002ad8e7600000)
+   libstdc++.so.6 => /usr/lib/x86_64-linux-gnu/libstdc++.so.6 (0x00002ad8ee70a000)
+   libm.so.6 => /usr/lib/x86_64-linux-gnu/libm.so.6 (0x00002ad8e70c6000)
+   libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00002ad8e71af000)
+   libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x00002ad8ee936000)
+   /lib64/ld-linux-x86-64.so.2 (0x000055c036743000)
+   libdl.so.2 => /usr/lib/x86_64-linux-gnu/libdl.so.2 (0x00002ad8e71cf000)
+   libpthread.so.0 => /usr/lib/x86_64-linux-gnu/libpthread.so.0 (0x00002ad8e71d4000)
+   librt.so.1 => /usr/lib/x86_64-linux-gnu/librt.so.1 (0x00002ad8e71d9000)
+   libcublasLt.so.12 => /usr/local/cuda/lib64/libcublasLt.so.12 (0x00002ad8eec00000)
+
+🚀 Running CUDA Llama2 inference...
+🤖 Model: llama2_7b.bin
+📝 Prompt: 'Once upon a time'
+⚙️  Steps: 200, Temperature: 0.0, Top-p: 0.9, Seed: 42
+📏 Actual model size being executed: 27.0 GB
+⚠️  Large model detected - monitoring for potential issues...
+💾 GPU memory should be sufficient for A100 (40GB+ available)
+🔧 Run command: ./llama2_cublas llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 200 -t 0.0 -p 0.9 -s 42
+
+🔬 Pre-execution environment check:
+   CUDA_VISIBLE_DEVICES: Not set
+   LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+   PATH: /usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin...
+   Available GPUs: GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-552d60f8-9c4d-de6c-5b30-1aa194930997)
+
+🔄 Execution Strategy #1: Standard execution with 96KB shared memory
+   Environment: {'CUDA_DEVICE_MAX_CONNECTIONS': '32'}
+   Command: ./llama2_cublas llama2_7b.bin -z tokenizer.bin -i Once upon a time -n 200 -t 0.0 -p 0.9 -s 42
+   Timeout: 300s
+
+============================================================
+🤖 LLAMA2 CUDA OUTPUT (llama2_7b.bin) - Strategy 1:
+============================================================
+Initializing CUDA...
+STDERR: Achieved tok/s: 31.73
+CUDA Status: no error
+Device Count: 1
+Found 1 CUDA device(s)
+Using GPU: NVIDIA A100-SXM4-40GB
+GPU Memory: 39.5 GB
+Compute Capability: 8.0
+Max Shared Memory per Block: 48 KB
+Max Thread Blocks per Grid (per dimension): 2147483647 x 65535 x 65535
+Max Threads per Block: 1024
+Warp Size: 32
+GPU supports large shared memory (>= Ampere architecture)
+Detected A100 GPU - 163 KB shared memory available
+Initializing CUDA libraries...
+CUDA initialization complete!
+GPU Config: NVIDIA A100-SXM4-40GB, SM=8.0, SMs=108, SharedMem=48KB
+Shared memory configuration completed!
+Loading model...
+
+=== MEMORY MAPPING TRANSFORMER WEIGHTS ===
+Model Configuration:
+  - Vocabulary size: 32000 tokens
+  - Model dimension: 4096
+  - Number of layers: 32
+  - Number of attention heads: 32
+  - Number of key/value heads: 32
+  - Head size: 128
+  - Hidden dimension: 11008
+  - Max sequence length: 2048
+  - Shared classifier weights: No
+
+1. Token Embedding Table:
+   - Dimensions: [32000, 4096] (vocab_size × dim)
+   - Memory: 131072000 floats = 500.00 MB
+   - Purpose: Maps vocabulary tokens to dense vector embeddings
+
+2. Attention RMSNorm Weights:
+   - Dimensions: [32, 4096] (n_layers × dim)
+   - Memory: 131072 floats = 0.50 MB
+   - Purpose: Scaling parameters for RMSNorm before self-attention
+
+3. Query Projection Weights (Wq):
+   - Dimensions: [32, 4096, 4096] (n_layers × dim × dim)
+   - Memory: 536870912 floats = 2048.00 MB
+   - Purpose: Projects input vectors to query vectors for multi-head attention
+
+4. Key Projection Weights (Wk):
+   - Dimensions: [32, 4096, 128] (n_layers × dim ×  head_size)
+   - Memory: 536870912 floats = 2048.00 MB
+   - Purpose: Projects input vectors to key vectors for attention computation
+
+5. Value Projection Weights (Wv):
+   - Dimensions: [32, 4096, 128] (n_layers × dim × kv_head_size)
+   - Memory: 536870912 floats = 2048.00 MB
+   - Purpose: Projects input vectors to value vectors for attention computation
+
+6. Output Projection Weights (Wo):
+   - Dimensions: [32, 4096, 4096] (n_layers × dim × dim)
+   - Memory: 536870912 floats = 2048.00 MB
+   - Purpose: Projects concatenated attention head outputs back to model dimension
+
+7. Feedforward RMSNorm Weights:
+   - Dimensions: [32, 4096] (n_layers × dim)
+   - Memory: 131072 floats = 0.50 MB
+   - Purpose: Scaling parameters for RMSNorm before feedforward network
+
+8. Feedforward Gate Projection Weights (W1):
+   - Dimensions: [32, 4096, 11008] (n_layers × dim × hidden_dim)
+   - Memory: 1442840576 floats = 5504.00 MB
+   - Purpose: Gate projection in SwiGLU activation (part of feedforward network)
+
+9. Feedforward Down Projection Weights (W2):
+   - Dimensions: [32, 11008, 4096] (n_layers × hidden_dim × dim)
+   - Memory: 1442840576 floats = 5504.00 MB
+   - Purpose: Projects from hidden dimension back to model dimension in feedforward
+
+10. Feedforward Up Projection Weights (W3):
+    - Dimensions: [32, 4096, 11008] (n_layers × dim × hidden_dim)
+    - Memory: 1442840576 floats = 5504.00 MB
+    - Purpose: Value projection in SwiGLU activation (multiplied with gated W1 output)
+
+11. Final RMSNorm Weights:
+    - Dimensions: [4096] (dim)
+    - Memory: 4096 floats = 0.02 MB
+    - Purpose: Final layer normalization before classification layer
+
+12. Skipping RoPE Frequency Caches:
+    - Cos cache size: 131072 floats
+    - Sin cache size: 131072 floats
+    - Purpose: Pre-computed cosine/sine values for Rotary Position Embedding
+
+13. Classifier Weights: SEPARATE
+    - Dimensions: [32000, 4096] (vocab_size × dim)
+    - Memory: 131072000 floats = 500.00 MB
+    - Purpose: Projects final hidden states to vocabulary logits
+
+=== TOTAL MEMORY SUMMARY ===
+Total transformer weights: 6738415616 floats = 25705.02 MB
+Frequency caches: 262144 floats = 1.00 MB
+=====================================
+
+Copying weights to GPU...
+Weights copied to GPU successfully.
+Model loaded successfully!
+Model parameters:
+  Dimensions: 4096
+  Layers: 32
+  Heads: 32
+  KV Heads: 32
+  Vocab size: 32000
+  Sequence length: 2048
+  Head size: 128
+  Hidden dimension: 11008
+Loading tokenizer...
+
+=== BUILDING TOKENIZER ===
+Tokenizer file: tokenizer.bin
+Expected vocabulary size: 32000 tokens
+
+1. Setting vocabulary size: 32000
+2. Allocated vocabulary pointer array: 32000 pointers = 256000 bytes
+3. Allocated vocabulary scores array: 32000 floats = 128000 bytes
+4. Initialized sorted vocabulary as NULL (created lazily)
+5. Initializing byte pieces for single-byte tokens:
+   - Created 256 single-byte token representations (512 bytes total)
+   - Examples: byte_pieces[0] = '\0', byte_pieces[65*2] = 'A', byte_pieces[32*2] = ' '
+
+6. Opening tokenizer file: tokenizer.bin
+7. Read max token length: 27 characters
+
+8. Reading vocabulary entries from file:
+   Token   0: score=  0.0000, length= 5, string="<unk>"
+   Token   1: score=  0.0000, length= 5, string="\n<s>\n"
+   Token   2: score=  0.0000, length= 6, string="\n</s>\n"
+   Token   3: score=  0.0000, length= 6, string="<0x00>"
+   Token   4: score=  0.0000, length= 6, string="<0x01>"
+   Token   5: score=  0.0000, length= 6, string="<0x02>"
+   Token   6: score=  0.0000, length= 6, string="<0x03>"
+   Token   7: score=  0.0000, length= 6, string="<0x04>"
+   Token   8: score=  0.0000, length= 6, string="<0x05>"
+   Token   9: score=  0.0000, length= 6, string="<0x06>"
+   Token  10: score=  0.0000, length= 6, string="<0x07>"
+   Token  11: score=  0.0000, length= 6, string="<0x08>"
+   Token  12: score=  0.0000, length= 6, string="<0x09>"
+   Token  13: score=  0.0000, length= 6, string="<0x0A>"
+   Token  14: score=  0.0000, length= 6, string="<0x0B>"
+   Token  15: score=  0.0000, length= 6, string="<0x0C>"
+   Token  16: score=  0.0000, length= 6, string="<0x0D>"
+   Token  17: score=  0.0000, length= 6, string="<0x0E>"
+   Token  18: score=  0.0000, length= 6, string="<0x0F>"
+   Token  19: score=  0.0000, length= 6, string="<0x10>"
+   ... (showing first 20 tokens only)
+
+=== TOKENIZER MEMORY SUMMARY ===
+Vocabulary pointer array: 256000 bytes
+Vocabulary scores array: 128000 bytes
+Vocabulary strings total: 209865 bytes
+Byte pieces array: 512 bytes
+Sorted vocabulary: 0 bytes (created lazily)
+Total tokenizer memory: 594377 bytes = 580.45 KB
+
+=== TOKENIZER STATISTICS ===
+Total vocabulary size: 32000 tokens
+Maximum token length: 27 characters
+Token composition:
+  - Single character tokens: 96
+  - Multi-character tokens: 31904
+  - Special tokens (< >): 258
+Score range: -1000000000.0000 to 0.0000
+
+Example token categories:
+  - BOS (Beginning of Sequence): token 1 = "
+<s>
+"
+  - EOS (End of Sequence): token 2 = "
+</s>
+"
+  - Space character: token 32 = "<0x1D>"
+  - Letter 'A': token 65 = "<0x3E>"
+  - Letter 'a': token 97 = "<0x5E>"
+===============================
+
+Generation parameters:
+  Temperature: 0.00
+  Top-p: 0.90
+  Steps: 200
+  Random seed: 42
+Flash Attention: ULTRA-OPTIMIZED GPU ACCELERATION
+
+Using FUSED TRANSFORMER kernels for maximum performance!
+=== FUSED OPTIMIZED GPU GENERATION ===
+Using Flash Attention with CUDA acceleration
+Steps: 200
+Prompt: "Once upon a time"
+=====================================
+
+
+=== ENCODING TEXT TO TOKENS ===
+Input text: "Once upon a time"
+Add BOS (Beginning of Sequence): Yes
+Add EOS (End of Sequence): No
+Text length: 16 characters
+
+1. Setting up sorted vocabulary for binary search:
+   - Creating sorted vocabulary array...
+   - Memory allocated: 32000 TokenIndex structs = 512000 bytes
+   - Sorted 32000 vocabulary entries alphabetically
+
+2. Allocated working buffer: 57 bytes
+3. Initialized encoding state: str_len=0, n_tokens=0
+
+4. Processing special tokens:
+   - Added BOS token: ID=1 at position 0
+   - Added space prefix token: ID=29871 at position 1
+
+5. Initial token array state:
+   Current tokens: [1, 29871]
+   Token count: 2
+
+6. Processing input text character by character:
+   Character 1: 'O' (0x4F)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "O" (length=1)
+     -> Vocabulary lookup for "O": FOUND (ID=29949)
+     -> Added token 29949 at position 2
+     -> Current token count: 3
+   Character 2: 'n' (0x6E)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "n" (length=1)
+     -> Vocabulary lookup for "n": FOUND (ID=29876)
+     -> Added token 29876 at position 3
+     -> Current token count: 4
+   Character 3: 'c' (0x63)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "c" (length=1)
+     -> Vocabulary lookup for "c": FOUND (ID=29883)
+     -> Added token 29883 at position 4
+     -> Current token count: 5
+   Character 4: 'e' (0x65)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "e" (length=1)
+     -> Vocabulary lookup for "e": FOUND (ID=29872)
+     -> Added token 29872 at position 5
+     -> Current token count: 6
+   Character 5: ' ' (0x20)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: " " (length=1)
+     -> Vocabulary lookup for " ": FOUND (ID=29871)
+     -> Added token 29871 at position 6
+     -> Current token count: 7
+   Character 6: 'u' (0x75)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "u" (length=1)
+     -> Vocabulary lookup for "u": FOUND (ID=29884)
+     -> Added token 29884 at position 7
+     -> Current token count: 8
+   Character 7: 'p' (0x70)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "p" (length=1)
+     -> Vocabulary lookup for "p": FOUND (ID=29886)
+     -> Added token 29886 at position 8
+     -> Current token count: 9
+   Character 8: 'o' (0x6F)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "o" (length=1)
+     -> Vocabulary lookup for "o": FOUND (ID=29877)
+     -> Added token 29877 at position 9
+     -> Current token count: 10
+   Character 9: 'n' (0x6E)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "n" (length=1)
+     -> Vocabulary lookup for "n": FOUND (ID=29876)
+     -> Added token 29876 at position 10
+     -> Current token count: 11
+   Character 10: ' ' (0x20)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: " " (length=1)
+     -> Vocabulary lookup for " ": FOUND (ID=29871)
+     -> Added token 29871 at position 11
+     -> Current token count: 12
+   Character 11: 'a' (0x61)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "a" (length=1)
+     -> Vocabulary lookup for "a": FOUND (ID=29874)
+     -> Added token 29874 at position 12
+     -> Current token count: 13
+   Character 12: ' ' (0x20)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: " " (length=1)
+     -> Vocabulary lookup for " ": FOUND (ID=29871)
+     -> Added token 29871 at position 13
+     -> Current token count: 14
+   Character 13: 't' (0x74)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "t" (length=1)
+     -> Vocabulary lookup for "t": FOUND (ID=29873)
+     -> Added token 29873 at position 14
+     -> Current token count: 15
+   Character 14: 'i' (0x69)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "i" (length=1)
+     -> Vocabulary lookup for "i": FOUND (ID=29875)
+     -> Added token 29875 at position 15
+     -> Current token count: 16
+   Character 15: 'm' (0x6D)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "m" (length=1)
+     -> Vocabulary lookup for "m": FOUND (ID=29885)
+     -> Added token 29885 at position 16
+     -> Current token count: 17
+   Character 16: 'e' (0x65)
+     -> UTF-8 sequence start (or ASCII)
+     -> str_buffer: "e" (length=1)
+     -> Vocabulary lookup for "e": FOUND (ID=29872)
+     -> Added token 29872 at position 17
+     -> Current token count: 18
+
+7. After initial tokenization:
+   Tokens: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 29871, 29874, 29871, 29873, 29875, 29885, 29872]
+   Token count: 18
+   Token strings: ["
+<s>
+", " ", "O", "n", "c", "e", " ", "u", "p", "o", "n", " ", "a", " ", "t", "i", "m", "e"]
+
+8. Starting BPE merge phase:
+   Merge iteration 1:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: " "+"u" = " u" (ID=318, score=-59.0000) at position 6
+     -> Better merge found: "o"+"n" = "on" (ID=265, score=-6.0000) at position 9
+     -> Better merge found: " "+"a" = " a" (ID=263, score=-4.0000) at position 11
+     -> Better merge found: " "+"t" = " t" (ID=260, score=-1.0000) at position 13
+     -> Applying merge: tokens[13]+tokens[14] -> token 260
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 29871, 29874, 29871, 29873, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 29871, 29874, 260, 29875, 29885, 29872]
+     -> New token count: 17
+   Merge iteration 2:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: " "+"u" = " u" (ID=318, score=-59.0000) at position 6
+     -> Better merge found: "o"+"n" = "on" (ID=265, score=-6.0000) at position 9
+     -> Better merge found: " "+"a" = " a" (ID=263, score=-4.0000) at position 11
+     -> Applying merge: tokens[11]+tokens[12] -> token 263
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 29871, 29874, 260, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 263, 260, 29875, 29885, 29872]
+     -> New token count: 16
+   Merge iteration 3:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: " "+"u" = " u" (ID=318, score=-59.0000) at position 6
+     -> Better merge found: "o"+"n" = "on" (ID=265, score=-6.0000) at position 9
+     -> Applying merge: tokens[9]+tokens[10] -> token 265
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 29877, 29876, 263, 260, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 265, 263, 260, 29875, 29885, 29872]
+     -> New token count: 15
+   Merge iteration 4:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: " "+"u" = " u" (ID=318, score=-59.0000) at position 6
+     -> Applying merge: tokens[6]+tokens[7] -> token 318
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 29871, 29884, 29886, 265, 263, 260, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 318, 29886, 265, 263, 260, 29875, 29885, 29872]
+     -> New token count: 14
+   Merge iteration 5:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Better merge found: "i"+"m" = "im" (ID=326, score=-67.0000) at position 11
+     -> Applying merge: tokens[11]+tokens[12] -> token 326
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 318, 29886, 265, 263, 260, 29875, 29885, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 29883, 29872, 318, 29886, 265, 263, 260, 326, 29872]
+     -> New token count: 13
+   Merge iteration 6:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Better merge found: "c"+"e" = "ce" (ID=346, score=-87.0000) at position 4
+     -> Applying merge: tokens[4]+tokens[5] -> token 346
+     -> Before merge: [1, 29871, 29949, 29876, 29883, 29872, 318, 29886, 265, 263, 260, 326, 29872]
+     -> After merge:  [1, 29871, 29949, 29876, 346, 318, 29886, 265, 263, 260, 326, 29872]
+     -> New token count: 12
+   Merge iteration 7:
+     Searching for best merge candidate...
+     -> Better merge found: " "+"O" = " O" (ID=438, score=-179.0000) at position 1
+     -> Applying merge: tokens[1]+tokens[2] -> token 438
+     -> Before merge: [1, 29871, 29949, 29876, 346, 318, 29886, 265, 263, 260, 326, 29872]
+     -> After merge:  [1, 438, 29876, 346, 318, 29886, 265, 263, 260, 326, 29872]
+     -> New token count: 11
+   Merge iteration 8:
+     Searching for best merge candidate...
+     -> Better merge found: " O"+"n" = " On" (ID=1551, score=-1292.0000) at position 1
+     -> Better merge found: " u"+"p" = " up" (ID=701, score=-442.0000) at position 4
+     -> Better merge found: "im"+"e" = "ime" (ID=603, score=-344.0000) at position 9
+     -> Applying merge: tokens[9]+tokens[10] -> token 603
+     -> Before merge: [1, 438, 29876, 346, 318, 29886, 265, 263, 260, 326, 29872]
+     -> After merge:  [1, 438, 29876, 346, 318, 29886, 265, 263, 260, 603]
+     -> New token count: 10
+   Merge iteration 9:
+     Searching for best merge candidate...
+     -> Better merge found: " O"+"n" = " On" (ID=1551, score=-1292.0000) at position 1
+     -> Better merge found: " u"+"p" = " up" (ID=701, score=-442.0000) at position 4
+     -> Applying merge: tokens[4]+tokens[5] -> token 701
+     -> Before merge: [1, 438, 29876, 346, 318, 29886, 265, 263, 260, 603]
+     -> After merge:  [1, 438, 29876, 346, 701, 265, 263, 260, 603]
+     -> New token count: 9
+   Merge iteration 10:
+     Searching for best merge candidate...
+     -> Better merge found: " O"+"n" = " On" (ID=1551, score=-1292.0000) at position 1
+     -> Better merge found: " t"+"ime" = " time" (ID=931, score=-672.0000) at position 7
+     -> Applying merge: tokens[7]+tokens[8] -> token 931
+     -> Before merge: [1, 438, 29876, 346, 701, 265, 263, 260, 603]
+     -> After merge:  [1, 438, 29876, 346, 701, 265, 263, 931]
+     -> New token count: 8
+   Merge iteration 11:
+     Searching for best merge candidate...
+     -> Better merge found: " O"+"n" = " On" (ID=1551, score=-1292.0000) at position 1
+     -> Applying merge: tokens[1]+tokens[2] -> token 1551
+     -> Before merge: [1, 438, 29876, 346, 701, 265, 263, 931]
+     -> After merge:  [1, 1551, 346, 701, 265, 263, 931]
+     -> New token count: 7
+   Merge iteration 12:
+     Searching for best merge candidate...
+     -> Better merge found: " On"+"ce" = " Once" (ID=9038, score=-8779.0000) at position 1
+     -> Better merge found: " up"+"on" = " upon" (ID=2501, score=-2242.0000) at position 3
+     -> Applying merge: tokens[3]+tokens[4] -> token 2501
+     -> Before merge: [1, 1551, 346, 701, 265, 263, 931]
+     -> After merge:  [1, 1551, 346, 2501, 263, 931]
+     -> New token count: 6
+   Merge iteration 13:
+     Searching for best merge candidate...
+     -> Better merge found: " On"+"ce" = " Once" (ID=9038, score=-8779.0000) at position 1
+     -> Applying merge: tokens[1]+tokens[2] -> token 9038
+     -> Before merge: [1, 1551, 346, 2501, 263, 931]
+     -> After merge:  [1, 9038, 2501, 263, 931]
+     -> New token count: 5
+   Merge iteration 14:
+     Searching for best merge candidate...
+     -> No more merges possible. BPE complete.
+
+9. Finalizing token sequence:
+
+=== ENCODING COMPLETE ===
+Final token count: 5
+Final token IDs: [1, 9038, 2501, 263, 931]
+Final token strings: ["
+<s>
+", " Once", " upon", " a", " time"]
+Reconstructed text: "
+<s>
+ Once upon a time"
+
+Memory usage during encoding:
+  - Working buffer: 57 bytes
+  - Output tokens array: 5 * 4 = 20 bytes
+  - Sorted vocabulary (if created): 512000 bytes
+BPE merge iterations: 13
+==========================
+
+Starting generation with token 1 ("
+<s>
+")
+Initial prompt tokens: 5
+Detected GPU: NVIDIA A100-SXM4-40GB
+Compute Capability: 8.0
+SMs: 108, Shared Memory: 48 KB
+Once upon a timeUsing argmax sampling -> token 29892
+,Using argmax sampling -> token 727
+ thereUsing argmax sampling -> token 471
+ wasUsing argmax sampling -> token 263
+ aUsing argmax sampling -> token 2217
+ littleUsing argmax sampling -> token 7826
+ girlUsing argmax sampling -> token 1058
+ whoUsing argmax sampling -> token 18012
+ lovedUsing argmax sampling -> token 304
+ toUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 29889
+.Using argmax sampling -> token 2296
+ SheUsing argmax sampling -> token 18012
+ lovedUsing argmax sampling -> token 304
+ toUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 577
+ soUsing argmax sampling -> token 1568
+ muchUsing argmax sampling -> token 393
+ thatUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 3099
+ anythingUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 1033
+ couldUsing argmax sampling -> token 679
+ getUsing argmax sampling -> token 902
+ herUsing argmax sampling -> token 6567
+ handsUsing argmax sampling -> token 373
+ onUsing argmax sampling -> token 29889
+.Using argmax sampling -> token 2296
+ SheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 29892
+,Using argmax sampling -> token 278
+ theUsing argmax sampling -> token 1250
+ backUsing argmax sampling -> token 310
+ ofUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 29892
+,Using argmax sampling -> token 278
+ theUsing argmax sampling -> token 1250
+ backUsing argmax sampling -> token 310
+ ofUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 1449
+ againUsing argmax sampling -> token 29892
+,Using argmax sampling -> token 322
+ andUsing argmax sampling -> token 769
+ thenUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 1449
+ againUsing argmax sampling -> token 29889
+.Using argmax sampling -> token 2296
+ SheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 577
+ soUsing argmax sampling -> token 1568
+ muchUsing argmax sampling -> token 393
+ thatUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 2745
+ untilUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 471
+ wasUsing argmax sampling -> token 17319
+ sickUsing argmax sampling -> token 310
+ ofUsing argmax sampling -> token 5183
+ readingUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 29889
+.Using argmax sampling -> token 13
+
+Using argmax sampling -> token 1576
+TheUsing argmax sampling -> token 2217
+ littleUsing argmax sampling -> token 7826
+ girlUsing argmax sampling -> token 18012
+ lovedUsing argmax sampling -> token 304
+ toUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 577
+ soUsing argmax sampling -> token 1568
+ muchUsing argmax sampling -> token 393
+ thatUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 3099
+ anythingUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 1033
+ couldUsing argmax sampling -> token 679
+ getUsing argmax sampling -> token 902
+ herUsing argmax sampling -> token 6567
+ handsUsing argmax sampling -> token 373
+ onUsing argmax sampling -> token 29889
+.Using argmax sampling -> token 2296
+ SheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 29892
+,Using argmax sampling -> token 278
+ theUsing argmax sampling -> token 1250
+ backUsing argmax sampling -> token 310
+ ofUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 29892
+,Using argmax sampling -> token 278
+ theUsing argmax sampling -> token 1250
+ backUsing argmax sampling -> token 310
+ ofUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 1449
+ againUsing argmax sampling -> token 29892
+,Using argmax sampling -> token 322
+ andUsing argmax sampling -> token 769
+ thenUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 1449
+ againUsing argmax sampling -> token 29889
+.Using argmax sampling -> token 2296
+ SheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 577
+ soUsing argmax sampling -> token 1568
+ muchUsing argmax sampling -> token 393
+ thatUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 723
+ wouldUsing argmax sampling -> token 1303
+ readUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 2745
+ untilUsing argmax sampling -> token 1183
+ sheUsing argmax sampling -> token 471
+ wasUsing argmax sampling -> token 17319
+ sickUsing argmax sampling -> token 310
+ ofUsing argmax sampling -> token 5183
+ readingUsing argmax sampling -> token 278
+ theUsing argmax sampling -> token 274
+ cUsing argmax sampling -> token 406
+ereUsing argmax sampling -> token 284
+alUsing argmax sampling -> token 3800
+ boxUsing argmax sampling -> token 29889
+.Using argmax sampling -> token 13
+
+Using argmax sampling -> token 1576
+TheUsing argmax sampling -> token 2217
+ littleUsing argmax sampling -> token 7826
+ girl
+Achieved tok/s: 31.73
+
+Cleaning up...
+Done.
+============================================================
+🔍 Process completed with return code: 0
+✅ Strategy 1 succeeded!
+🎉 CUDA Llama2 execution completed successfully with llama2_7b.bin!
