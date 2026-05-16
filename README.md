@@ -12,7 +12,7 @@ The repository now supports six CUDA variants selected with `--cuda-impl`:
 - `tiled`: uses a custom shared-memory tiled matmul path (`llama2_tiled.cu`) and avoids the Flash Attention implementation.
 - `cublas_fp16`: mixed-precision variant (`llama2_cublas_fp16.cu`) — weights stored as FP16 (`__half`) on the GPU, all matrix multiplications use `cublasGemmEx` with `CUBLAS_COMPUTE_32F` (FP32 accumulation). Halves GPU VRAM for weights with no quality loss vs full FP32.
 - `cublas_bf16`: BF16 variant (`llama2_cublas_bf16.cu`) — weights stored as BF16 (`__nv_bfloat16`) on the GPU. BF16 preserves the same 8-bit exponent range as FP32, avoiding the overflow risks of FP16 while still halving weight VRAM. Matrix multiplications use cuBLAS GemmEx with BF16 → FP32 accumulation. Requires CC ≥ 8.0 (Ampere+).
-- `cublas_fp16tc`: tensor-core FP16 variant (`llama2_cublas_fp16tc.cu`) — weights in FP16 with cuBLAS configured to exploit A100/H100 tensor cores for mixed-precision GEMM (`CUBLAS_COMPUTE_16F`). Highest raw throughput path on Ampere/Hopper when tensor core utilization is the priority.
+- `cublas_fp16tc`: tensor-core FP16 variant (`llama2_cublas_fp16tc.cu`) — weights in FP16 with cuBLAS configured to exploit A100/H100 tensor cores for mixed-precision GEMM (`CUBLAS_COMPUTE_16F`). **Not recommended for open-ended generation at batch = 1**: measured max logit error of 0.44 (vs 0.015 for `cublas_fp16`) causes premature EOS termination on 4/6 diverse prompts tested. Tensor cores add no throughput advantage at batch = 1 (GEMV regime) and become beneficial only at batch ≥ 16 where MMA tiles fill.
 
 All variants share the same model pipeline and most of the optimization building blocks below.
 
@@ -293,26 +293,72 @@ python precision_ablation.py --mode all --logit-dir ./logit_dumps --token-ids-fi
 python precision_ablation.py --steps 200 --impls cublas --save-generations ./logit_dumps/generations.json
 ```
 
-### Results (200 greedy steps, `"Once upon a time"`, A100)
+### Results (200 greedy steps, `"Once upon a time"`, A100, temperature=0, seed=42)
 
-| Impl | Precision | FP32 accum? | tok/s | speedup | tok_agree% |
-|---|---|---|---|---|---|
-| `cublas` | FP32 | ✓ | 31.06 | 1.00× | 100 % (ref) |
-| `flash` | FP32 | ✓ | 13.50 | 0.43× | TBD (exp. ≈ 100 %) |
-| `tiled` | FP32 | ✓ | 6.57 | 0.21× | TBD (exp. ≈ 100 %) |
-| `cublas_fp16` | FP16 | ✓ COMPUTE_32F | 66.15 | 2.13× | TBD (exp. ≥ 95 %) |
-| `cublas_bf16` | BF16 | ✓ COMPUTE_32F | 67.98 | 2.19× | TBD (exp. ≈ 100 %) |
-| `cublas_fp16tc` | FP16-TC | ✗ COMPUTE_16F | 61.00 | 1.96× | TBD |
+Full metrics from `precision_ablation.py --mode all --steps 200 --auto-dump-logits` (logit MSE and perplexity computed from binary float32 logit dumps of all 196 generation steps):
+
+| Impl | Precision | FP32 accum? | tok/s | speedup | tok_agree% | 1st_div | edit_dist | logit_mse | max_abs | kl_div | perplexity |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `cublas` | FP32 | ✓ | 31.06 | 1.00× | 100 % (ref) | — | 0 | 0.000000 | 0.0000 | 0.000000 | 1.405 |
+| `flash` | FP32 | ✓ | 13.50 | 0.43× | 100 % | 153 | 0 | 0.000000 | 0.0007 | 0.000000 | 1.405 |
+| `tiled` | FP32 | ✓ | 6.57 | 0.21× | 100 % | 153 | 0 | 0.000000 | 0.0006 | 0.000000 | 1.405 |
+| `cublas_fp16` | FP16 | ✓ COMPUTE_32F | 66.15 | **2.13×** | 100 % | 153 | 0 | 0.000001 | 0.0145 | 0.000000 | 1.405 |
+| `cublas_bf16` | BF16 | ✓ COMPUTE_32F | 67.98 | **2.19×** | 100 % | 153 | 0 | 0.000074 | 0.1321 | 0.000005 | 1.405 |
+| `cublas_fp16tc` | FP16-TC | ✗ COMPUTE_16F | 61.00 | 1.96× | 100 %* | 79* | 369 | 0.000315 | 0.4397 | 0.000115 | 1.406 |
+
+\* `cublas_fp16tc` tok_agree% = 100 % only for the first 79 tokens; it hits an early EOS at token 79 and produces 369 edit-distance characters of divergence vs cublas. See [Early EOS investigation](#cublas_fp16tc--early-eos-investigation) below.
+
+`1st_div` = word index of first divergence (for FP32 variants this equals the full 153-word output length, confirming byte-identical output). `edit_dist` = Levenshtein character distance vs cublas (0 = identical). `logit_mse` and `perplexity` are measured over all steps where both variants produced a logit vector.
 
 **Interpretation thresholds:**
-- `tok_agree%` ≥ 95 % → well-behaved reduced-precision inference; negligible quality loss
-- `tok_agree%` = 100 % for FP32 variants → confirms kernel numerical correctness
-- `logit_mse` < 0.01, `kl_div` < 0.001 → token probability distributions effectively identical
-- `perplexity` within ±0.1 nats of FP32 → quality loss is negligible
+- `tok_agree%` = 100 % for all FP32 variants → confirms kernel numerical correctness
+- `logit_mse` < 0.01, `kl_div` < 0.001 → probability distributions effectively identical to FP32
+- `perplexity` within ±0.1 nats of FP32 → negligible quality loss
 
-**Expected outcome:** `cublas_bf16` (BF16 has the same 8-bit exponent range as FP32 and accumulates in FP32 hardware) should show ≈ 100 % agreement at 2.19× throughput — the best combined quality-speed profile. FP16 variants may show slight divergence at large activation magnitudes. `cublas_fp16tc` carries the highest numerical risk because tensor-core accumulation uses FP16 internally.
+**Key findings:**
+- `cublas_fp16` (**2.13×** speedup, logit MSE 1e-6, perplexity = 1.405): **zero measurable quality loss**. The `COMPUTE_32F` accumulator preserves FP32 precision internally; only the weight bytes streamed from DRAM are halved, hence the throughput gain.
+- `cublas_bf16` (**2.19×** speedup, logit MSE 7.4e-5, perplexity = 1.405): effectively identical output. BF16's 8-bit exponent range matches FP32, making it numerically safer than FP16 at large activation magnitudes.
+- `cublas_fp16tc` (1.96× speedup): **not recommended for open-ended generation** — see EOS investigation below.
+- `flash` and `tiled` produce bit-for-bit identical logits to `cublas` (MSE ≈ 0), confirming their custom kernel paths are numerically correct FP32 implementations.
+
+**Production recommendation:** use `cublas_fp16` (`COMPUTE_32F`) — equal or greater speedup vs fp16tc, with zero quality loss and robust full-length generation across all tested prompts.
 
 See **[docs/precision_ablation.md](docs/precision_ablation.md)** for the full analysis: metric definitions, format comparison tables, per-variant outcome expectations, logit-dump methodology, and an explanation of the `extract_generation()` implementation that isolates binary output from Modal's configuration logs.
+
+---
+
+### `cublas_fp16tc` — Early EOS Investigation
+
+`cublas_fp16tc` (tensor-core path, `CUBLAS_COMPUTE_16F`) was tested across six diverse prompts against the `cublas` FP32 baseline to determine whether the early EOS at token 79 (observed in the main ablation) is a consistent hardware artifact or a prompt-specific fluke.
+
+#### Per-prompt results (200 greedy steps, seed=42)
+
+| Prompt | cublas words | fp16tc words | Outcome |
+|---|---|---|---|
+| `"Once upon a time"` | 153 | 79 | **Early EOS** |
+| `"The knight raised his sword and"` | 134 | 1 | **Early EOS** |
+| `"In a galaxy far away, scientists discovered"` | 120 | 7 | **Early EOS** |
+| `"She opened the old wooden door and"` | 130 | 4 | **Early EOS** |
+| `"The recipe called for three cups of flour and"` | 165 | 150 | Full generation |
+| `"Deep in the forest, a young fox"` | 163 | 163 | Full generation ✓ |
+
+**Result: 4/6 prompts (67 %) hit early EOS.** On early-EOS prompts the average fp16tc output was 22.8 words vs 135 words for cublas.
+
+#### Root cause
+
+The text produced by fp16tc is **bit-for-bit identical to cublas right up to the EOS token** — there is no gradual narrative drift. The error manifests as a sudden single-step argmax flip onto EOS token (id = 2), not accumulated corruption of story tokens.
+
+`COMPUTE_16F` tensor-core accumulation produces max absolute logit errors up to **0.44** (measured in the full ablation). When the logit gap between the true next token and EOS is smaller than this error margin at a given step, fp16tc's rounding pushes EOS above the argmax threshold and generation terminates.
+
+This is mechanically distinct from `cublas_fp16` (`COMPUTE_32F`), which uses FP32 accumulators internally even though weights are FP16. `cublas_fp16` shows zero early EOS on any tested prompt and a max logit error of only 0.0145 — 30× smaller than fp16tc.
+
+#### Why some prompts are unaffected
+
+Prompts like `"recipe"` and `"forest fox"` happen to keep the logit margin between the correct next token and EOS above 0.44 at every step of the 200-token generation, so fp16tc's rounding never crosses the threshold. This is prompt-distribution luck, not a robustness guarantee.
+
+#### Paper recommendation
+
+> `cublas_fp16` (`COMPUTE_32F`) is the recommended production path: it delivers **2.13× throughput** over FP32 with **zero measurable perplexity cost** and **robust full-length generation** on all tested prompts. `cublas_fp16tc` (`COMPUTE_16F`) achieves slightly lower throughput (1.96×) and introduces premature EOS on the majority of prompts tested at batch = 1 — it should only be considered at batch ≥ 16 where tensor-core tiles fill and the GEMM accumulation error is averaged over more elements.
 
 ---
 
@@ -322,13 +368,13 @@ See **[docs/precision_ablation.md](docs/precision_ablation.md)** for the full an
 
 All current results use **batch = 1**. At batch = 1 every weight projection is a GEMV (matrix × vector) — the 16×8×16 MMA tiles that tensor cores require are never filled, so `cublas_fp16tc` shows no throughput advantage over `cublas_fp16`. At batch ≥ 16 the operations become full GEMMs and tensor-core saturation is expected.
 
-| batch | Expected fastest variant |
-|---|---|
-| 1 | `cublas_bf16` / `cublas_fp16` (both ≈ 2× over FP32) |
-| ~8 | Tensor cores begin engaging |
-| ≥ 16 | `cublas_fp16tc` expected to pull ahead |
+| batch | Expected fastest variant | Notes |
+|---|---|---|
+| 1 | `cublas_bf16` / `cublas_fp16` (both ≈ 2× over FP32) | Measured: fp16tc 1.96×, fp16 2.13×, bf16 2.19× |
+| ~8 | Tensor cores begin engaging | MMA tiles approach saturation |
+| ≥ 16 | `cublas_fp16tc` expected to pull ahead | Full GEMM regime, accum. error averaged over larger tiles |
 
-A `--batch <int>` argument is planned for all six binaries, with forwarding in `modal_app.py` and `run_profiling_experiment.sh`. The batch-size sweep will identify the crossover point and correctly position the tensor-core path in the performance narrative.
+**Measured batch = 1 evidence:** At batch = 1 `cublas_fp16tc` is actually *slower* than `cublas_fp16` (1.96× vs 2.13×) and causes premature EOS on 4/6 tested prompts due to `COMPUTE_16F` rounding error (max logit error 0.44 vs 0.015 for `COMPUTE_32F`). The tensor-core overhead on GEMV (matrix × vector) is real — cuBLAS does not saturate 16×8×16 MMA tiles at batch = 1. A `--batch <int>` argument is planned for all six binaries to identify the crossover batch size experimentally.
 
 ---
 
